@@ -1,0 +1,23 @@
+{
+  "name": "schema_forge_project",
+  "version": "1.0.0",
+  "description": "\"# SchemaForge\" \r \"# Checking for the git status \"",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev-backend": "npm run dev --prefix backend",
+    "dev-frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently \"npm run dev-backend\" \"npm run dev-frontend\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anubhav2923/SchemaForge.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Anubhav2923/SchemaForge/issues"
+  },
+  "homepage": "https://github.com/Anubhav2923/SchemaForge#readme"
+}
