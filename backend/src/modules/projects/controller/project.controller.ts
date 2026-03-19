@@ -1,24 +1,112 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-const DEV_USER_ID = "dev-user-1";
-
 type CreateProjectBody = {
   name: string;
   description?: string;
+  database_type?: string;
+  owner_username?: string;
+};
+
+type UpdateProjectBody = {
+  name?: string;
+  description?: string | null;
+  database_type?: string;
+  is_favorite?: boolean;
+  is_archived?: boolean;
 };
 
 type ProjectParams = {
   id: string;
 };
 
-// Types for Clerk auth on the request
-declare module 'fastify' {
+type ProjectSlugParams = {
+  username: string;
+  slug: string;
+};
+
+type ProjectRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  user_id: string;
+  owner_username: string;
+  slug: string;
+  database_type: string;
+  is_favorite: boolean;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+declare module "fastify" {
   interface FastifyRequest {
     auth: {
       userId: string | null;
       sessionId: string | null;
-    }
+    };
   }
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeUsername(value: string | undefined | null, fallback: string) {
+  const base = slugify(value ?? "");
+  return base || slugify(fallback) || "user";
+}
+
+async function buildUniqueSlug(
+  app: FastifyInstance,
+  ownerUsername: string,
+  name: string,
+) {
+  const baseSlug = slugify(name) || "diagram";
+
+  const existing = await app.db.query<{ slug: string }>(
+    `
+      SELECT slug
+      FROM projects
+      WHERE owner_username = $1 AND slug = $2
+      LIMIT 1;
+    `,
+    [ownerUsername, baseSlug],
+  );
+
+  if (existing.rows.length === 0) {
+    return baseSlug;
+  }
+
+  let suffix = 2;
+  while (suffix < 100) {
+    const candidate = `${baseSlug}-${suffix}`;
+    const clash = await app.db.query<{ slug: string }>(
+      `
+        SELECT slug
+        FROM projects
+        WHERE owner_username = $1 AND slug = $2
+        LIMIT 1;
+      `,
+      [ownerUsername, candidate],
+    );
+
+    if (clash.rows.length === 0) {
+      return candidate;
+    }
+
+    suffix += 1;
+  }
+
+  return `${baseSlug}-${Date.now().toString(36)}`;
+}
+
+function mapProjectRow(row: ProjectRow) {
+  return row;
 }
 
 export async function createProject(
@@ -26,45 +114,75 @@ export async function createProject(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  const { name, description } = request.body as CreateProjectBody;
-  // Use Clerk userId or fallback to a common guest account for anonymous workspaces
-  const userId = request.auth?.userId || "clerk_guest";
+  const { name, description, database_type, owner_username } =
+    request.body as CreateProjectBody;
+  const userId = request.auth?.userId;
+
+  if (!userId) {
+    return reply.status(401).send({ message: "Must be logged in to create projects" });
+  }
 
   if (!name?.trim()) {
     return reply.status(400).send({ message: "Project name is required" });
   }
 
-  const result = await app.db.query(
-    `
-      INSERT INTO projects (name, description, user_id)
-      VALUES ($1, $2, $3)
-      RETURNING *;
-    `,
-    [name.trim(), description?.trim() || null, userId],
-  );
+  const normalizedOwnerUsername = normalizeUsername(owner_username, userId);
+  const slug = await buildUniqueSlug(app, normalizedOwnerUsername, name.trim());
+  const normalizedDatabaseType = (database_type ?? "postgresql").trim().toLowerCase();
 
-  return reply.status(201).send(result.rows[0]);
+  try {
+    const result = await app.db.query<ProjectRow>(
+      `
+        INSERT INTO projects (name, description, user_id, owner_username, slug, database_type)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *;
+      `,
+      [
+        name.trim(),
+        description?.trim() || null,
+        userId,
+        normalizedOwnerUsername,
+        slug,
+        normalizedDatabaseType,
+      ],
+    );
+
+    return reply.status(201).send(mapProjectRow(result.rows[0]));
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      return reply.status(409).send({
+        message: "A diagram with that name already exists for this workspace.",
+      });
+    }
+
+    request.log.error({ error }, "Failed to create project");
+    return reply.status(500).send({
+      message: "Unable to create the diagram right now.",
+    });
+  }
 }
 
-export async function getProjects(app: FastifyInstance, request: FastifyRequest, reply: FastifyReply) {
+export async function getProjects(
+  app: FastifyInstance,
+  request: FastifyRequest,
+) {
   const userId = request.auth?.userId;
-  
+
   if (!userId) {
-    // Unauthenticated users see no projects in the dashboard list as requested
     return [];
   }
 
-  const result = await app.db.query(
+  const result = await app.db.query<ProjectRow>(
     `
       SELECT *
       FROM projects
       WHERE user_id = $1
-      ORDER BY created_at DESC;
+      ORDER BY is_favorite DESC, is_archived ASC, updated_at DESC, created_at DESC;
     `,
     [userId],
   );
 
-  return result.rows;
+  return result.rows.map(mapProjectRow);
 }
 
 export async function getProjectById(
@@ -75,23 +193,90 @@ export async function getProjectById(
   const { id } = request.params as ProjectParams;
   const userId = request.auth?.userId;
 
-  // For individual workspace viewing, we allow guests ("clerk_guest") OR the owner.
-  // This allows shared workspace viewing if we want to support it later, 
-  // currently we just check if it belongs to the user or is a guest project.
-  const result = await app.db.query(
+  const result = await app.db.query<ProjectRow>(
     `
       SELECT *
       FROM projects
-      WHERE id = $1 AND (user_id = $2 OR user_id = 'clerk_guest');
+      WHERE id = $1 AND user_id = $2;
     `,
-    [id, userId || 'non_existent_id'],
+    [id, userId || "non_existent_id"],
   );
 
   if (result.rows.length === 0) {
     return reply.status(404).send({ message: "Project not found or access denied" });
   }
 
-  return result.rows[0];
+  return mapProjectRow(result.rows[0]);
+}
+
+export async function getProjectBySlug(
+  app: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { username, slug } = request.params as ProjectSlugParams;
+  const normalizedUsername = slugify(username);
+  const normalizedSlug = slugify(slug);
+
+  const result = await app.db.query<ProjectRow>(
+    `
+      SELECT *
+      FROM projects
+      WHERE owner_username = $1 AND slug = $2;
+    `,
+    [normalizedUsername, normalizedSlug],
+  );
+
+  if (result.rows.length === 0) {
+    return reply.status(404).send({ message: "Project not found or access denied" });
+  }
+
+  return mapProjectRow(result.rows[0]);
+}
+
+export async function updateProject(
+  app: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as ProjectParams;
+  const { name, description, database_type, is_favorite, is_archived } =
+    request.body as UpdateProjectBody;
+  const userId = request.auth?.userId;
+
+  if (!userId) {
+    return reply.status(401).send({ message: "Must be logged in to update projects" });
+  }
+
+  const result = await app.db.query<ProjectRow>(
+    `
+      UPDATE projects
+      SET
+        name = COALESCE($3, name),
+        description = COALESCE($4, description),
+        database_type = COALESCE($5, database_type),
+        is_favorite = COALESCE($6, is_favorite),
+        is_archived = COALESCE($7, is_archived),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND user_id = $2
+      RETURNING *;
+    `,
+    [
+      id,
+      userId,
+      name?.trim() || null,
+      description === undefined ? null : description?.trim() || null,
+      database_type?.trim().toLowerCase() || null,
+      typeof is_favorite === "boolean" ? is_favorite : null,
+      typeof is_archived === "boolean" ? is_archived : null,
+    ],
+  );
+
+  if (result.rows.length === 0) {
+    return reply.status(404).send({ message: "Project not found or permission denied" });
+  }
+
+  return mapProjectRow(result.rows[0]);
 }
 
 export async function deleteProject(

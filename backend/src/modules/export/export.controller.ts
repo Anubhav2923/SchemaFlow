@@ -4,6 +4,10 @@ type ExportParams = {
   projectId: string;
 };
 
+type ProjectRow = {
+  database_type: string;
+};
+
 type TableRow = {
   id: string;
   name: string;
@@ -34,12 +38,136 @@ function escapeIdentifier(identifier: string) {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
+function pascalCase(value: string) {
+  return value
+    .split(/[^a-zA-Z0-9]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join("");
+}
+
+function mapMongoType(dataType: string) {
+  const normalized = dataType.toLowerCase();
+
+  if (
+    normalized.includes("int") ||
+    normalized.includes("numeric") ||
+    normalized.includes("decimal") ||
+    normalized.includes("double") ||
+    normalized.includes("real")
+  ) {
+    return "Number";
+  }
+
+  if (normalized.includes("bool")) {
+    return "Boolean";
+  }
+
+  if (
+    normalized.includes("date") ||
+    normalized.includes("time") ||
+    normalized.includes("timestamp")
+  ) {
+    return "Date";
+  }
+
+  if (normalized.includes("json")) {
+    return "Object";
+  }
+
+  return "String";
+}
+
+function formatMongoDefault(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "now()" || normalized === "current_timestamp") {
+    return "Date.now";
+  }
+
+  if (normalized === "true" || normalized === "false") {
+    return normalized;
+  }
+
+  if (!Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return JSON.stringify(value);
+}
+
+function buildMongoSchema(
+  tables: TableRow[],
+  columnsByTable: Map<string, ColumnRow[]>,
+  relationshipRefs: Map<string, string>,
+) {
+  const models = tables.map((table) => {
+    const schemaName = pascalCase(table.name) || "Diagram";
+    const fields = (columnsByTable.get(table.id) ?? []).map((column) => {
+      const pieces = [`type: ${mapMongoType(column.data_type)}`];
+
+      if (!column.is_nullable || column.is_primary) {
+        pieces.push("required: true");
+      }
+
+      if (column.is_unique) {
+        pieces.push("unique: true");
+      }
+
+      const defaultValue = formatMongoDefault(column.default_value);
+      if (defaultValue) {
+        pieces.push(`default: ${defaultValue}`);
+      }
+
+      const ref = relationshipRefs.get(`${table.name}.${column.name}`);
+      if (ref) {
+        pieces.push(`ref: "${ref}"`);
+      }
+
+      return `  ${column.name}: { ${pieces.join(", ")} }`;
+    });
+
+    return [
+      `const ${schemaName}Schema = new mongoose.Schema({`,
+      fields.length > 0 ? fields.join(",\n") : "  // No columns defined yet",
+      `}, { timestamps: true });`,
+      "",
+      `const ${schemaName} = mongoose.model("${schemaName}", ${schemaName}Schema);`,
+    ].join("\n");
+  });
+
+  const exportNames = tables.map((table) => pascalCase(table.name) || "Diagram");
+
+  return [
+    "const mongoose = require('mongoose');",
+    "",
+    models.join("\n\n"),
+    "",
+    `module.exports = { ${exportNames.join(", ")} };`,
+  ].join("\n");
+}
+
 export async function exportSQL(
   app: FastifyInstance,
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
   const { projectId } = request.params as ExportParams;
+
+  const projectRes = await app.db.query<ProjectRow>(
+    `
+      SELECT database_type
+      FROM projects
+      WHERE id = $1;
+    `,
+    [projectId],
+  );
+
+  const databaseType = projectRes.rows[0]?.database_type ?? "postgresql";
 
   const tablesRes = await app.db.query<TableRow>(
     `
@@ -95,6 +223,20 @@ export async function exportSQL(
     const existing = columnsByTable.get(column.table_id) ?? [];
     existing.push(column);
     columnsByTable.set(column.table_id, existing);
+  }
+
+  const relationshipRefs = new Map<string, string>();
+  for (const relationship of relationshipsRes.rows) {
+    relationshipRefs.set(
+      `${relationship.source_table_name}.${relationship.source_column_name}`,
+      relationship.target_table_name,
+    );
+  }
+
+  if (databaseType === "mongodb") {
+    return reply.send({
+      sql: buildMongoSchema(tables, columnsByTable, relationshipRefs),
+    });
   }
 
   const createStatements = tables.map((table) => {

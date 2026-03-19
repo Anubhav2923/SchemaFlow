@@ -106,6 +106,16 @@ export async function createRelationship(payload: CreateRelationshipPayload) {
   return response.data;
 }
 
+export async function updateTable(tableId: string, payload: { name: string }) {
+  const response = await apiClient.patch<SchemaTable>(`/tables/${tableId}`, payload);
+  return response.data;
+}
+
+export async function updateColumn(columnId: string, payload: Partial<CreateColumnPayload>) {
+  const response = await apiClient.patch<SchemaColumn>(`/columns/${columnId}`, payload);
+  return response.data;
+}
+
 export async function deleteTable(tableId: string) {
   await apiClient.delete(`/tables/${tableId}`);
 }

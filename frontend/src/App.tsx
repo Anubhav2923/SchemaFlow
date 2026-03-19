@@ -28,6 +28,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<Dashboard />} />
+      <Route path="/u/:username/diagrams/:diagramSlug" element={<ProjectEditor />} />
       <Route path="/projects/:projectId" element={<ProjectEditor />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
