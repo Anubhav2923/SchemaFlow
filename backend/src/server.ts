@@ -1,10 +1,7 @@
 import { buildApp } from './app';
 import { env } from './config/env';
 
-/**
- * server.ts — Entry Point
- * Only starts the server. All configuration lives in app.ts.
- */
+
 async function start() {
   try {
     const app = await buildApp();
