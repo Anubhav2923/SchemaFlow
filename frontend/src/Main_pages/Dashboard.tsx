@@ -231,7 +231,7 @@ function Dashboard() {
   }
 
   function handleDelete(projectId: string) {
-    if (confirm("Permanently archive this architecture?")) {
+    if (confirm("Are you absolutely sure you want to delete this project? This action cannot be undone.")) {
       deleteProjectMutation.mutate(projectId);
     }
   }

@@ -102,3 +102,41 @@ export async function deleteTable(
 
   return reply.send({ message: "Table deleted" });
 }
+export async function updateTable(
+  app: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as TableParams;
+  const { name, group_id } = request.body as { name?: string; group_id?: string | null };
+
+  if (!name?.trim() && group_id === undefined) {
+    return reply.status(400).send({ message: "No fields to update" });
+  }
+
+  const userId = request.auth?.userId;
+
+  if (!userId) {
+    return reply.status(401).send({ message: "Must be logged in to modify schema" });
+  }
+
+  const result = await app.db.query(
+    `
+      UPDATE tables
+      SET 
+        name = COALESCE($1, name),
+        group_id = CASE WHEN $2 = 'REMOVE' THEN NULL ELSE COALESCE($2::uuid, group_id) END
+      WHERE id = $3 AND EXISTS (
+        SELECT 1 FROM projects WHERE projects.id = tables.project_id AND projects.user_id = $4
+      )
+      RETURNING *;
+    `,
+    [name?.trim(), group_id === null ? "REMOVE" : group_id, id, userId],
+  );
+
+  if (result.rows.length === 0) {
+    return reply.status(404).send({ message: "Table not found or permission denied" });
+  }
+
+  return reply.send(result.rows[0]);
+}

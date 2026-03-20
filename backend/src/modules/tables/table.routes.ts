@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import {
   createTable,
   deleteTable,
+  updateTable,
   getTablesByProject,
 } from "./table.controller";
 
@@ -16,5 +17,9 @@ export async function tableRoutes(app: FastifyInstance) {
 
   app.delete("/tables/:id", async (request, reply) =>
     deleteTable(app, request, reply),
+  );
+
+  app.patch("/tables/:id", async (request, reply) =>
+    updateTable(app, request, reply),
   );
 }

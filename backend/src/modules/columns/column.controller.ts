@@ -138,3 +138,68 @@ export async function deleteColumn(
 
   return reply.send({ message: "Column deleted" });
 }
+export async function updateColumn(
+  app: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as ColumnParams;
+  const {
+    name,
+    data_type,
+    is_nullable,
+    is_primary,
+    is_unique,
+    default_value,
+    position,
+  } = request.body as Partial<CreateColumnBody>;
+
+  const userId = request.auth?.userId;
+  if (!userId) {
+    return reply.status(401).send({ message: "Must be logged in to modify schema" });
+  }
+
+  // Update logic with ownership check
+  const result = await app.db.query(
+    `
+      UPDATE columns
+      SET
+        name = COALESCE($1, name),
+        data_type = COALESCE($2, data_type),
+        is_nullable = CASE 
+          WHEN $4 = true THEN false 
+          ELSE COALESCE($3, is_nullable) 
+        END,
+        is_primary = COALESCE($4, is_primary),
+        is_unique = CASE 
+          WHEN $4 = true THEN true 
+          ELSE COALESCE($5, is_unique) 
+        END,
+        default_value = CASE WHEN $6 = 'SF_NULL' THEN NULL ELSE COALESCE($6, default_value) END,
+        position = COALESCE($7, position)
+      WHERE id = $8 AND EXISTS (
+        SELECT 1 FROM tables 
+        JOIN projects ON projects.id = tables.project_id
+        WHERE tables.id = columns.table_id AND projects.user_id = $9
+      )
+      RETURNING *;
+    `,
+    [
+      name,
+      data_type,
+      is_nullable,
+      is_primary,
+      is_unique,
+      default_value === null ? 'SF_NULL' : default_value,
+      position,
+      id,
+      userId,
+    ],
+  );
+
+  if (result.rows.length === 0) {
+    return reply.status(404).send({ message: "Column not found or permission denied" });
+  }
+
+  return reply.send(result.rows[0]);
+}

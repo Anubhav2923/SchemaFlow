@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import {
   createColumn,
   deleteColumn,
+  updateColumn,
   getColumnsByTable,
 } from "./column.controller";
 
@@ -16,5 +17,9 @@ export async function columnRoutes(app: FastifyInstance) {
 
   app.delete("/columns/:id", async (request, reply) =>
     deleteColumn(app, request, reply),
+  );
+
+  app.patch("/columns/:id", async (request, reply) =>
+    updateColumn(app, request, reply),
   );
 }
