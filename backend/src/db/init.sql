@@ -70,8 +70,46 @@ CREATE TABLE IF NOT EXISTS tables (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    group_id UUID,
+    x DOUBLE PRECISION,
+    y DOUBLE PRECISION,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#6366f11a',
+    x DOUBLE PRECISION NOT NULL DEFAULT 0,
+    y DOUBLE PRECISION NOT NULL DEFAULT 0,
+    width DOUBLE PRECISION NOT NULL DEFAULT 400,
+    height DOUBLE PRECISION NOT NULL DEFAULT 300,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE tables
+    ADD COLUMN IF NOT EXISTS group_id UUID;
+
+ALTER TABLE tables
+    ADD COLUMN IF NOT EXISTS x DOUBLE PRECISION;
+
+ALTER TABLE tables
+    ADD COLUMN IF NOT EXISTS y DOUBLE PRECISION;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'tables_group_id_fkey'
+          AND table_name = 'tables'
+    ) THEN
+        ALTER TABLE tables
+            ADD CONSTRAINT tables_group_id_fkey
+            FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS columns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -107,6 +145,8 @@ CREATE INDEX IF NOT EXISTS idx_projects_favorite ON projects(is_favorite);
 CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(is_archived);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_owner_username_slug ON projects(owner_username, slug);
 CREATE INDEX IF NOT EXISTS idx_tables_project_id ON tables(project_id);
+CREATE INDEX IF NOT EXISTS idx_tables_group_id ON tables(group_id);
 CREATE INDEX IF NOT EXISTS idx_columns_table_id ON columns(table_id);
 CREATE INDEX IF NOT EXISTS idx_relationships_source_table_id ON relationships(source_table_id);
 CREATE INDEX IF NOT EXISTS idx_relationships_target_table_id ON relationships(target_table_id);
+CREATE INDEX IF NOT EXISTS idx_groups_project_id ON groups(project_id);

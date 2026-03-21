@@ -22,13 +22,13 @@ export function Navbar({ theme, onToggle, fullWidth = false }: NavbarProps) {
         <div className={`flex items-center border-r border-transparent w-80 px-4 md:px-6`}>
           <Link to="/" className="flex items-center gap-3 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[linear-gradient(135deg,#6366f1,#4f46e5)] text-white shadow-lg transition-transform group-hover:scale-105 group-hover:rotate-3 shadow-indigo-500/30">
-              <span className="text-base font-black tracking-tighter">SF</span>
+              <span className="text-[15px] font-extrabold tracking-[-0.04em]">SF</span>
             </div>
             <div className="flex flex-col min-w-0 px-1">
-              <span className={`text-[17px] font-extrabold leading-none tracking-tight truncate font-['Plus_Jakarta_Sans'] ${theme === 'dark' ? 'text-white' : 'text-[#0f172a]'}`}>
+              <span className={`text-[18px] font-extrabold leading-none tracking-[-0.04em] truncate font-['Plus_Jakarta_Sans'] ${theme === 'dark' ? 'text-white' : 'text-[#0f172a]'}`}>
                 Schema Forge
               </span>
-              <span className="mt-1.5 text-[9px] uppercase tracking-[0.22em] font-black text-[#94a3b8] truncate opacity-90">
+              <span className="mt-1.5 text-[10px] uppercase tracking-[0.18em] font-extrabold text-[#94a3b8] truncate opacity-90">
                 DATABASE ARCHITECT
               </span>
             </div>

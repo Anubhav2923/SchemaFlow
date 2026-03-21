@@ -2,8 +2,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "@clerk/clerk-react";
 import { useEffect } from "react";
 import { setAuthToken } from "./lib/axios";
-import Dashboard from "./Main_pages/Dashboard";
-import ProjectEditor from "./Main_pages/ProjectEditor";
+import Dashboard from "./Main_pages/Main_Dashboard";
+import ProjectEditor from "./Main_pages/Main_ProjectEditor";
 
 function App() {
   const { getToken, userId } = useAuth();

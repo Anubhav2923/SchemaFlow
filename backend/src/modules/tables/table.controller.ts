@@ -3,6 +3,8 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 type CreateTableBody = {
   name: string;
   project_id: string;
+  x?: number | null;
+  y?: number | null;
 };
 
 type TableParams = {
@@ -18,7 +20,7 @@ export async function createTable(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  const { name, project_id: projectId } = request.body as CreateTableBody;
+  const { name, project_id: projectId, x, y } = request.body as CreateTableBody;
 
   if (!name?.trim() || !projectId) {
     return reply
@@ -43,11 +45,11 @@ export async function createTable(
 
   const result = await app.db.query(
     `
-      INSERT INTO tables (name, project_id)
-      VALUES ($1, $2)
+      INSERT INTO tables (name, project_id, x, y)
+      VALUES ($1, $2, $3, $4)
       RETURNING *;
     `,
-    [name.trim(), projectId],
+    [name.trim(), projectId, x ?? null, y ?? null],
   );
 
   return reply.status(201).send(result.rows[0]);
@@ -108,9 +110,14 @@ export async function updateTable(
   reply: FastifyReply,
 ) {
   const { id } = request.params as TableParams;
-  const { name, group_id } = request.body as { name?: string; group_id?: string | null };
+  const { name, group_id, x, y } = request.body as {
+    name?: string;
+    group_id?: string | null;
+    x?: number;
+    y?: number;
+  };
 
-  if (!name?.trim() && group_id === undefined) {
+  if (!name?.trim() && group_id === undefined && x === undefined && y === undefined) {
     return reply.status(400).send({ message: "No fields to update" });
   }
 
@@ -125,13 +132,15 @@ export async function updateTable(
       UPDATE tables
       SET 
         name = COALESCE($1, name),
-        group_id = CASE WHEN $2 = 'REMOVE' THEN NULL ELSE COALESCE($2::uuid, group_id) END
-      WHERE id = $3 AND EXISTS (
-        SELECT 1 FROM projects WHERE projects.id = tables.project_id AND projects.user_id = $4
+        group_id = CASE WHEN $2 = 'REMOVE' THEN NULL ELSE COALESCE($2::uuid, group_id) END,
+        x = COALESCE($3, x),
+        y = COALESCE($4, y)
+      WHERE id = $5 AND EXISTS (
+        SELECT 1 FROM projects WHERE projects.id = tables.project_id AND projects.user_id = $6
       )
       RETURNING *;
     `,
-    [name?.trim(), group_id === null ? "REMOVE" : group_id, id, userId],
+    [name?.trim(), group_id === null ? "REMOVE" : group_id, x, y, id, userId],
   );
 
   if (result.rows.length === 0) {

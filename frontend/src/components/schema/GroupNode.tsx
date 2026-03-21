@@ -1,6 +1,6 @@
+import { memo, useEffect, useState } from "react";
 import { NodeResizer } from "reactflow";
 import type { NodeProps } from "reactflow";
-import { useState } from "react";
 
 export type GroupNodeData = {
   name: string;
@@ -31,11 +31,22 @@ const PALETTE = [
   { hex: "#64748b", alpha: "#64748b1a", label: "Slate" },
 ];
 
-export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
+function GroupNodeComponent({ data, selected }: NodeProps<GroupNodeData>) {
   const { name, color, isDark, onRename, onColorChange, onRemove, onResize, onResizeStop } = data;
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(name);
   const [showPalette, setShowPalette] = useState(false);
+
+  useEffect(() => {
+    setVal(name);
+  }, [name]);
+
+  useEffect(() => {
+    if (!showPalette) return;
+    const close = () => setShowPalette(false);
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [showPalette]);
 
   const commitRename = () => {
     setIsEditing(false);
@@ -95,12 +106,12 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
       >
         {/* ── Header label above the box ── */}
         <div
-          style={{ 
-            position: "absolute", 
-            top: -46, 
-            left: 0, 
-            display: "flex", 
-            alignItems: "center", 
+          style={{
+            position: "absolute",
+            top: -46,
+            left: 0,
+            display: "flex",
+            alignItems: "center",
             gap: 10,
             zIndex: 10
           }}
@@ -150,11 +161,11 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
             </span>
           )}
 
-          <div 
-            style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: 6, 
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
               background: isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.9)",
               backdropFilter: "blur(8px)",
               padding: "4px 8px",
@@ -165,7 +176,8 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
           >
             {/* Color palette toggle */}
             <button
-              onMouseDown={e => { e.stopPropagation(); setShowPalette(v => !v); }}
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); setShowPalette(v => !v); }}
               style={{
                 width: 24,
                 height: 24,
@@ -187,11 +199,10 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
 
             {/* Delete button */}
             <button
-              onMouseDown={e => { 
-                e.stopPropagation(); 
-                if (window.confirm("Are you sure you want to delete this comment box? Tables inside will stay.")) {
-                  onRemove?.();
-                }
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => {
+                e.stopPropagation();
+                onRemove?.();
               }}
               style={{
                 width: 24,
@@ -222,7 +233,7 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
             <div
               style={{
                 position: "absolute",
-                top: 44,
+                bottom: "calc(100% + 10px)",
                 left: 0,
                 display: "grid",
                 gridTemplateColumns: "repeat(5, 1fr)",
@@ -240,7 +251,8 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
                 <button
                   key={p.hex}
                   title={p.label}
-                  onMouseDown={e => {
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => {
                     e.stopPropagation();
                     onColorChange?.(p.alpha);
                     setShowPalette(false);
@@ -279,9 +291,9 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
               userSelect: "none",
             }}
           >
-             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 19l-7-7 7-7" transform="rotate(225 12 12)" />
-              </svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 19l-7-7 7-7" transform="rotate(225 12 12)" />
+            </svg>
             <span style={{ fontSize: 10, fontWeight: 900, color: borderColor, letterSpacing: "0.1em" }}>RESIZE</span>
           </div>
         )}
@@ -289,3 +301,5 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeData>) {
     </>
   );
 }
+
+export const GroupNode = memo(GroupNodeComponent);

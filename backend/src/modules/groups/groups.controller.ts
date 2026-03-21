@@ -137,16 +137,41 @@ export async function deleteGroup(
     return reply.status(401).send({ message: "Unauthorized" });
   }
 
-  const result = await app.db.query(
-    `
-    DELETE FROM groups
-    WHERE id = $1 AND EXISTS (
-      SELECT 1 FROM projects WHERE projects.id = groups.project_id AND projects.user_id = $2
-    )
-    RETURNING id;
-    `,
-    [id, userId],
-  );
+  const client = await app.db.connect();
+  let result;
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      `
+      UPDATE tables
+      SET group_id = NULL
+      WHERE group_id = $1
+        AND EXISTS (
+          SELECT 1 FROM projects WHERE projects.id = tables.project_id AND projects.user_id = $2
+        );
+      `,
+      [id, userId],
+    );
+
+    result = await client.query(
+      `
+      DELETE FROM groups
+      WHERE id = $1 AND EXISTS (
+        SELECT 1 FROM projects WHERE projects.id = groups.project_id AND projects.user_id = $2
+      )
+      RETURNING id;
+      `,
+      [id, userId],
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 
   if (result.rows.length === 0) {
     return reply.status(404).send({ message: "Group not found or access denied" });

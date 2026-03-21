@@ -17,7 +17,7 @@ async function migrate() {
       CREATE TABLE IF NOT EXISTS groups (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           name TEXT NOT NULL,
-          color TEXT NOT NULL DEFAULT '#ffffff',
+          color TEXT NOT NULL DEFAULT '#6366f11a',
           x DOUBLE PRECISION NOT NULL DEFAULT 0,
           y DOUBLE PRECISION NOT NULL DEFAULT 0,
           width DOUBLE PRECISION NOT NULL DEFAULT 400,
@@ -27,6 +27,8 @@ async function migrate() {
       );
 
       ALTER TABLE tables ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES groups(id) ON DELETE SET NULL;
+      ALTER TABLE tables ADD COLUMN IF NOT EXISTS x DOUBLE PRECISION;
+      ALTER TABLE tables ADD COLUMN IF NOT EXISTS y DOUBLE PRECISION;
     `);
 
     console.log('✅ Success: Tables "groups" created and "tables.group_id" added.');

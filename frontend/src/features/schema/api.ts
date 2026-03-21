@@ -5,6 +5,8 @@ export type SchemaTable = {
   name: string;
   project_id: string;
   group_id: string | null;
+  x: number | null;
+  y: number | null;
   created_at: string;
 };
 
@@ -111,6 +113,8 @@ export type AiOptimizationResponse = {
 export type CreateTablePayload = {
   name: string;
   project_id: string;
+  x?: number;
+  y?: number;
 };
 
 export type CreateColumnPayload = {
@@ -224,7 +228,10 @@ export async function createGroup(payload: CreateGroupPayload) {
   return response.data;
 }
 
-export async function updateTable(tableId: string, payload: { name?: string; group_id?: string | null }) {
+export async function updateTable(
+  tableId: string,
+  payload: { name?: string; group_id?: string | null; x?: number; y?: number },
+) {
   const response = await apiClient.patch<SchemaTable>(`/tables/${tableId}`, payload);
   return response.data;
 }
