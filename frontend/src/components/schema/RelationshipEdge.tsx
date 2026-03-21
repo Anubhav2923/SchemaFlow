@@ -7,9 +7,9 @@ import {
 } from "reactflow";
 
 const EDGE_COLORS: Record<string, string> = {
-  "one-to-one": "#22d3ee",
-  "one-to-many": "#818cf8",
-  "many-to-many": "#c084fc",
+  "one-to-one": "#38bdf8",
+  "one-to-many": "#6366f1",
+  "many-to-many": "#a855f7",
 };
 
 const DARK_EDGE_COLORS: Record<string, string> = {
@@ -169,9 +169,9 @@ function RelationshipEdgeComponent({
         id={id}
         path={edgePath}
         style={{
-          stroke: color,
-          strokeWidth: selected ? 3.5 : 2.5,
-          opacity: selected ? 1 : 0.95,
+          stroke: isDark ? `${color}dd` : `${color}bb`,
+          strokeWidth: selected ? 2.5 : 1.5,
+          opacity: selected ? 1 : 0.6,
         }}
       />
 

@@ -294,6 +294,38 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
 
   const onNodesChange: OnNodesChange = useCallback((changes: NodeChange[]) => {
     setFlowNodes(nds => {
+      // ── Fix: Multi-node movement ──
+      const positionChanges = changes.filter(c => c.type === 'position' && c.dragging);
+      if (positionChanges.length > 0) {
+        const selectedIds = nds.filter(n => n.selected).map(n => n.id);
+        if (selectedIds.length > 1) {
+          const extraChanges: NodeChange[] = [];
+          positionChanges.forEach(pc => {
+            const dragNode = nds.find(n => n.id === (pc as any).id);
+            if (dragNode?.selected && (pc as any).positionDelta) {
+              const delta = (pc as any).positionDelta;
+              selectedIds.forEach(id => {
+                if (id !== dragNode.id && !changes.some(c => (c as any).id === id)) {
+                  const targetNode = nds.find(n => n.id === id);
+                  if (targetNode) {
+                    extraChanges.push({
+                      id,
+                      type: 'position',
+                      dragging: true,
+                      position: {
+                        x: targetNode.position.x + delta.x,
+                        y: targetNode.position.y + delta.y
+                      }
+                    });
+                  }
+                }
+              });
+            }
+          });
+          changes = [...changes, ...extraChanges];
+        }
+      }
+
       const updated = applyNodeChanges(changes, nds);
       return updated.map(n => {
         if (n.parentNode && !updated.some(p => p.id === n.parentNode)) {
@@ -309,9 +341,16 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   const onPreviewNodesChange: OnNodesChange = useCallback((changes) => setPreviewFlowNodes(ns => applyNodeChanges(changes, ns)), []);
   const onSelectionChange = useCallback(({ nodes: sel }: { nodes: Node[] }) => {
     setSelectedNodes(sel);
-    const id = sel.find(n => n.type === "tableNode")?.id ?? null;
-    if (id !== selectedNodeId) selectNode(id);
-  }, [selectNode, selectedNodeId, setSelectedNodes]);
+    const tableId = sel.find(n => n.type === "tableNode")?.id ?? null;
+    if (tableId !== selectedNodeId) {
+      selectNode(tableId);
+      // ── Fix: Sync Canvas Selection to Sidebar ──
+      if (tableId) {
+        setSidebarMode("schema"); // Switch to Tables (schema) tab
+        setExpandedTableId(tableId); // Expand the clicked table in the sidebar
+      }
+    }
+  }, [selectNode, selectedNodeId, setSelectedNodes, setSidebarMode, setExpandedTableId]);
 
   const canvasNodes = isTemplatePreviewMode ? previewFlowNodes : flowNodes;
   const canvasEdges = isTemplatePreviewMode ? templatePreviewEdges : edges;
@@ -746,8 +785,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
               connectionLineStyle={{ stroke: "#818cf8", strokeWidth: 2 }}
               connectionLineType={"smoothstep" as never}
             >
-              <Background id="grid-minor" variant={BackgroundVariant.Lines} gap={32} size={1} color={isDark ? "rgba(148,163,184,0.10)" : "rgba(148,163,184,0.16)"} />
-              <Background id="grid-major" variant={BackgroundVariant.Lines} gap={160} size={1.2} color={isDark ? "rgba(99,102,241,0.14)" : "rgba(99,102,241,0.12)"} />
+              <Background id="grid-dots" variant={BackgroundVariant.Dots} gap={32} size={1} color={isDark ? "rgba(99,102,241,0.08)" : "rgba(148,163,184,0.12)"} />
               <Controls showZoom showFitView showInteractive={false} className={`border-none shadow-2xl ${isDark ? "bg-slate-900 fill-white" : "bg-white"}`} />
             </ReactFlow>
 

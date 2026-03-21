@@ -6,7 +6,7 @@ const VERTICAL_GAP = 280;
 const AUTO_LAYOUT_HORIZONTAL_GAP = 420;
 const AUTO_LAYOUT_VERTICAL_GAP = 250;
 const AUTO_LAYOUT_CLUSTER_GAP = 320;
-const TABLE_WIDTH = 320;
+const TABLE_WIDTH = 336;
 const TABLE_ACCENTS = [
   "#10b981",
   "#3b82f6",
@@ -21,6 +21,13 @@ const TABLE_ACCENTS = [
 ];
 
 export type NodePositionMap = Record<string, { x: number; y: number }>;
+
+function roundNodePosition(position: { x: number; y: number }) {
+  return {
+    x: Math.round(position.x),
+    y: Math.round(position.y),
+  };
+}
 
 function hashString(value: string): number {
   let hash = 0;
@@ -217,6 +224,7 @@ export function autoLayoutPositions(
         x: cursorX + (localPosition.x - componentMinX),
         y: 120 + localPosition.y,
       };
+      positions[tableId] = roundNodePosition(positions[tableId]);
     });
 
     cursorX += componentWidth + AUTO_LAYOUT_CLUSTER_GAP;
@@ -253,7 +261,7 @@ export function buildNodes(
     return {
       id: group.id,
       type: "groupNode",
-      position: { x: gx, y: gy },
+      position: roundNodePosition({ x: gx, y: gy }),
       style: {
         width: gw,
         height: gh,
@@ -302,17 +310,17 @@ export function buildNodes(
 
     let position: { x: number; y: number };
     if (storedPos && !Number.isNaN(storedPos.x) && !Number.isNaN(storedPos.y)) {
-      position = storedPos;
+      position = roundNodePosition(storedPos);
     } else if (parentGroup) {
       // Convert absolute fallback to relative
       const pgx = Number.isNaN(parentGroup.x) ? 0 : (parentGroup.x ?? 0);
       const pgy = Number.isNaN(parentGroup.y) ? 0 : (parentGroup.y ?? 0);
-      position = {
+      position = roundNodePosition({
         x: fallback.x - pgx,
         y: fallback.y - pgy,
-      };
+      });
     } else {
-      position = fallback;
+      position = roundNodePosition(fallback);
     }
 
     return {

@@ -16,37 +16,32 @@ function TableNodeComponent({ data, selected }: NodeProps<TableNodeData>) {
 
   return (
     <div
-      className={`relative min-w-[340px] rounded-xl border ${isDark
+      className={`relative min-w-[336px] rounded-lg border-t-0 border shadow-md transition-all duration-300 ${isDark
           ? selected
-            ? "bg-[#081120] shadow-[0_18px_45px_rgba(15,23,42,0.55)] ring-2"
-            : "border-slate-700/80 bg-[#0b1220] shadow-[0_14px_34px_rgba(2,6,23,0.38)]"
+            ? "border-indigo-500/80 bg-slate-900 ring-1 ring-indigo-500/20 shadow-xl shadow-indigo-500/10"
+            : "border-slate-800 bg-slate-900"
           : selected
-            ? "bg-white shadow-[0_18px_44px_rgba(99,102,241,0.18)] ring-2"
-            : "border-slate-300 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.10)]"
+            ? "border-indigo-400 bg-white ring-1 ring-indigo-500/10 shadow-xl shadow-indigo-500/5"
+            : "border-slate-200 bg-white shadow-sm"
         }`}
       style={{
-        backdropFilter: "none", // Removed to prevent text blurriness when zoomed in ReactFlow
-        borderColor: selected ? accentColor : undefined,
-        boxShadow: selected ? `0 18px 44px ${accentColor}26` : undefined,
-        ["--tw-ring-color" as string]: `${accentColor}33`,
-        transition: "background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease",
+        backdropFilter: "none",
       }}
     >
-      {/* Top Accent Strip */}
+      {/* Header-Top Technical Accent */}
       <div
-        className="absolute inset-x-0 top-0 h-1.5 rounded-t-xl"
+        className="absolute inset-x-0 -top-[2px] h-[3px] rounded-t-lg"
         style={{
-          background: `linear-gradient(90deg, ${accentColor}, ${accentColor}cc)`,
-          boxShadow: `0 0 14px ${accentColor}55`,
+          backgroundColor: accentColor,
         }}
       />
 
-      {/* Header */}
-      <div className={`px-6 py-4 border-b flex justify-center items-center rounded-t-xl ${isDark ? "border-slate-700 bg-slate-900/82" : "border-slate-200 bg-slate-50/92"
-        }`}>
-        <h3 className={`text-[17px] font-extrabold uppercase tracking-[0.06em] antialiased ${isDark ? "text-slate-50" : "text-slate-800"}`}>
+      {/* Header - Technical Theme */}
+      <div className={`px-5 py-3 border-b flex justify-between items-center bg-transparent ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+        <h3 className={`text-[12px] font-black uppercase tracking-[0.15em] font-mono leading-none ${isDark ? "text-slate-200" : "text-slate-800"}`}>
           {data.name}
         </h3>
+        <div className={`h-1 w-1 rounded-full ${selected ? "scale-100 opacity-100" : "scale-0 opacity-0"} transition-all`} style={{ backgroundColor: accentColor }} />
       </div>
 
       {/* Column List */}

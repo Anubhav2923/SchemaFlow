@@ -166,8 +166,7 @@ function GroupNodeComponent({ data, selected }: NodeProps<GroupNodeData>) {
               display: "flex",
               alignItems: "center",
               gap: 6,
-              background: isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.9)",
-              backdropFilter: "blur(8px)",
+              background: isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.95)", // Adjusted opacity
               padding: "4px 8px",
               borderRadius: 14,
               boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
