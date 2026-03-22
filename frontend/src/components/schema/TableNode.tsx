@@ -16,32 +16,29 @@ function TableNodeComponent({ data, selected }: NodeProps<TableNodeData>) {
 
   return (
     <div
-      className={`relative min-w-[336px] rounded-lg border-t-0 border shadow-md transition-all duration-300 ${isDark
+      className={`relative min-w-[300px] max-w-[350px] rounded-[6px] border shadow-sm transition-all duration-200 ${
+        isDark
           ? selected
-            ? "border-indigo-500/80 bg-slate-900 ring-1 ring-indigo-500/20 shadow-xl shadow-indigo-500/10"
-            : "border-slate-800 bg-slate-900"
+            ? "border-indigo-500 bg-[#0f172a] ring-1 ring-indigo-500/50 shadow-md"
+            : "border-slate-700 bg-[#0f172a]"
           : selected
-            ? "border-indigo-400 bg-white ring-1 ring-indigo-500/10 shadow-xl shadow-indigo-500/5"
-            : "border-slate-200 bg-white shadow-sm"
-        }`}
-      style={{
-        backdropFilter: "none",
-      }}
+            ? "border-indigo-500 bg-white ring-1 ring-indigo-500/30 shadow-md"
+            : "border-slate-300 bg-white shadow-sm hover:border-slate-400"
+      }`}
     >
       {/* Header-Top Technical Accent */}
       <div
-        className="absolute inset-x-0 -top-[2px] h-[3px] rounded-t-lg"
+        className="absolute inset-x-0 -top-px h-[4px] rounded-t-[6px]"
         style={{
           backgroundColor: accentColor,
         }}
       />
 
       {/* Header - Technical Theme */}
-      <div className={`px-5 py-3 border-b flex justify-between items-center bg-transparent ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-        <h3 className={`text-[12px] font-black uppercase tracking-[0.15em] font-mono leading-none ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+      <div className={`px-4 py-3 border-b flex justify-between items-center ${isDark ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-slate-50"}`}>
+        <h3 className={`text-[14px] font-bold tracking-wide leading-none ${isDark ? "text-slate-200" : "text-slate-800"}`}>
           {data.name}
         </h3>
-        <div className={`h-1 w-1 rounded-full ${selected ? "scale-100 opacity-100" : "scale-0 opacity-0"} transition-all`} style={{ backgroundColor: accentColor }} />
       </div>
 
       {/* Column List */}

@@ -761,8 +761,11 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
               </div>
             )}
 
-            <div className="pointer-events-none absolute bottom-6 left-6 z-20">
-              <button onClick={handleAutoArrange} className={`pointer-events-auto rounded-2xl px-5 py-3 text-[12px] font-extrabold uppercase tracking-[0.12em] shadow-xl transition hover:scale-[1.02] active:scale-95 ${isDark ? "border border-slate-700 bg-slate-900/95 text-slate-200" : "border border-slate-200 bg-white/95 text-slate-700"}`}>Auto Arrange</button>
+            <div className="pointer-events-none absolute bottom-5 left-16 ml-3 z-20">
+              <button onClick={handleAutoArrange} className={`pointer-events-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold tracking-wide shadow-sm transition hover:bg-slate-50 active:scale-95 ${isDark ? "border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border border-slate-200 bg-white text-slate-700"}`}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                Auto Arrange
+              </button>
             </div>
 
             <ReactFlow
