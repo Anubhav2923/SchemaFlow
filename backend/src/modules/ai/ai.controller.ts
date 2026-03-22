@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import axios from "axios";
+import { z } from "zod";
 import { env } from "../../config/env";
 import { loadProjectSchema } from "../export/export.service";
 
@@ -37,44 +39,41 @@ async function callNvidia(messages: NvidiaMessage[]) {
     throw new Error("NVIDIA_API_KEY_MISSING");
   }
 
-  const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.NVIDIA_MODEL,
-      messages,
-      max_tokens: 4096,
-      temperature: 0.4,
-      top_p: 0.9,
-      stream: false,
-      chat_template_kwargs: {
-        enable_thinking: true,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`NVIDIA_HTTP_${response.status}`);
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{
-      message?: {
-        content?: string;
-      };
-    }>;
+  const invokeUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
+  const headers = {
+    Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
+    Accept: "application/json",
   };
 
-  const content = payload.choices?.[0]?.message?.content?.trim();
-  if (!content) {
-    throw new Error("NVIDIA_EMPTY_RESPONSE");
-  }
+  const payload = {
+    model: env.NVIDIA_MODEL,
+    messages: messages,
+    max_tokens: 16384,
+    temperature: 0.60,
+    top_p: 0.95,
+    stream: false,
+    chat_template_kwargs: { enable_thinking: true },
+  };
 
-  return content;
+  try {
+    const response = await axios.post(invokeUrl, payload, {
+      headers: headers,
+      responseType: "json",
+      timeout: 45000,
+    });
+
+    const content = response.data?.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error("NVIDIA_EMPTY_RESPONSE");
+    }
+
+    return content;
+  } catch (error: any) {
+    if (error.response) {
+      throw new Error(`NVIDIA_HTTP_${error.response.status}: ${JSON.stringify(error.response.data)}`);
+    }
+    throw error;
+  }
 }
 
 function schemaContextToPrompt(schema: Awaited<ReturnType<typeof loadProjectSchema>>) {
@@ -130,18 +129,22 @@ export async function generateSchemaWithAi(
         role: "system",
         content:
           "You are an expert database architect. Return strictly valid JSON only. Do not use markdown. " +
+          "CRITICAL DESIGN RULES: " +
+          "1. NEVER link a primary key (id) to another primary key (id) as a foreign key unless it's a strict 1:1 extension. " +
+          "2. One-to-many relationships MUST use proper foreign key columns (e.g., place category_id in posts, not post.id -> category.id). " +
+          "3. Many-to-many relationships MUST use a separate junction table. " +
           "Use this JSON shape: " +
           '{"summary":"string","tables":[{"name":"string","columns":[{"name":"string","data_type":"string","is_nullable":true,"is_primary":false,"is_unique":false,"default_value":null}]}],"relationships":[{"sourceTable":"string","sourceColumn":"string","targetTable":"string","targetColumn":"string","on_delete":"CASCADE","on_update":"CASCADE"}],"notes":["string"]}.',
       },
       existingSchema
         ? {
-            role: "user",
-            content: `Current schema context:\n${schemaContextToPrompt(existingSchema)}`,
-          }
+          role: "user",
+          content: `Current schema context:\n${schemaContextToPrompt(existingSchema)}`,
+        }
         : {
-            role: "user",
-            content: "There is no existing schema yet.",
-          },
+          role: "user",
+          content: "There is no existing schema yet.",
+        },
       {
         role: "user",
         content:
@@ -152,7 +155,34 @@ export async function generateSchemaWithAi(
     ]);
 
     const parsed = JSON.parse(extractJsonBlock(content)) as unknown;
-    return reply.send({ result: parsed });
+
+    
+    const GeneratedSchemaZod = z.object({
+      summary: z.string().optional(),
+      tables: z.array(z.object({
+        name: z.string(),
+        columns: z.array(z.object({
+          name: z.string(),
+          data_type: z.string(),
+          is_nullable: z.boolean().default(false),
+          is_primary: z.boolean().default(false),
+          is_unique: z.boolean().default(false),
+          default_value: z.any().nullable().optional()
+        }))
+      })),
+      relationships: z.array(z.object({
+        sourceTable: z.string(),
+        sourceColumn: z.string(),
+        targetTable: z.string(),
+        targetColumn: z.string(),
+        on_delete: z.string().optional(),
+        on_update: z.string().optional()
+      })).optional(),
+      notes: z.array(z.string()).optional()
+    });
+
+    const validated = GeneratedSchemaZod.parse(parsed);
+    return reply.send({ result: validated });
   } catch (error) {
     if (error instanceof Error && error.message === "NVIDIA_API_KEY_MISSING") {
       return reply.status(503).send({ message: "NVIDIA_API_KEY is not configured on the backend." });
@@ -181,7 +211,8 @@ export async function optimizeSchemaWithAi(
         role: "system",
         content:
           "You are an expert database reviewer. Return strictly valid JSON only with this shape: " +
-          '{"summary":"string","suggestions":[{"title":"string","priority":"high|medium|low","reason":"string","action":"string"}]}.',
+          '{"summary":"string","suggestions":[{"title":"string","priority":"high|medium|low","reason":"string","action":"string"}]}. ' +
+          "CRITICAL CHECKS: Detect if any primary key (id) is incorrectly used as a foreign key pointing to another id. Suggest adding dedicated columns (e.g., category_id) instead of linking id to id. Ensure many-to-many use junction tables.",
       },
       {
         role: "user",
@@ -190,7 +221,19 @@ export async function optimizeSchemaWithAi(
     ]);
 
     const parsed = JSON.parse(extractJsonBlock(content)) as unknown;
-    return reply.send({ result: parsed });
+    
+    const OptimizedSchemaZod = z.object({
+      summary: z.string().optional(),
+      suggestions: z.array(z.object({
+        title: z.string(),
+        priority: z.enum(["high", "medium", "low"]).catch("medium"),
+        reason: z.string(),
+        action: z.string()
+      }))
+    });
+
+    const validated = OptimizedSchemaZod.parse(parsed);
+    return reply.send({ result: validated });
   } catch (error) {
     if (error instanceof Error && error.message === "NVIDIA_API_KEY_MISSING") {
       return reply.status(503).send({ message: "NVIDIA_API_KEY is not configured on the backend." });

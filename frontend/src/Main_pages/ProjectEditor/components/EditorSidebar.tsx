@@ -65,6 +65,8 @@ interface EditorSidebarProps {
   // templates
   selectedTemplateId: string | null;
   setSelectedTemplateId: (id: string | null) => void;
+  handleApplyTemplate: (id: string) => void;
+  handleSaveTemplateLayout: () => void;
   // import
   sqlImport: string;
   setSqlImport: (v: string) => void;
@@ -88,6 +90,7 @@ export function EditorSidebar({
   handleRenameColumn, handleDeleteColumn, handleChangeColumnType, handleToggleColumnProp,
   handleDeleteRel,
   selectedTemplateId, setSelectedTemplateId,
+  handleApplyTemplate, handleSaveTemplateLayout,
   sqlImport, setSqlImport, handleImportSql, handleImportSqlFile,
 }: EditorSidebarProps) {
   const TABS = [
@@ -209,6 +212,8 @@ export function EditorSidebar({
           isDark={isDark}
           selectedTemplateId={selectedTemplateId}
           setSelectedTemplateId={setSelectedTemplateId}
+          handleApplyTemplate={handleApplyTemplate}
+          handleSaveTemplateLayout={handleSaveTemplateLayout}
         />
       )}
 

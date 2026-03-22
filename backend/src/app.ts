@@ -1,4 +1,5 @@
 import cors from "@fastify/cors";
+import fastifyRateLimit from "@fastify/rate-limit";
 import { clerkPlugin } from "@clerk/fastify";
 import Fastify from "fastify";
 import { aiRoutes } from "./modules/ai/ai.routes";
@@ -20,6 +21,12 @@ export async function buildApp() {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   });
+
+  await app.register(fastifyRateLimit, {
+    max: 100, // 100 requests per minute per IP
+    timeWindow: '1 minute'
+  });
+
   await app.register(clerkPlugin);
   await app.register(dbConnector);
 

@@ -34,8 +34,8 @@ import {
 } from "./constants";
 import {
   loadPositions, savePositions, loadTemplatePreviewLayout, saveTemplatePreviewLayout,
-  clearTemplatePreviewLayout, downloadTextFile, parseSqlDump,
-  buildTemplatePreviewSchema, buildTemplatePreviewPositions, computeTemplatePreviewPositions,
+  downloadTextFile, parseSqlDump, buildTemplatePreviewSchema,
+  computeTemplatePreviewPositions,
 } from "./utils";
 import type { TemplatePreviewLayout } from "./constants";
 
@@ -439,6 +439,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   }, [connectDialog, createRelMut, updateRelMut, dialogOnDelete, ensureAuth]);
 
   const handleFitView = useCallback(() => { if (reactFlowInstance) reactFlowInstance.fitView({ padding: 0.2, duration: 500 }); }, [reactFlowInstance]);
+  
   const handleAutoArrange = useCallback(() => {
     if (isTemplatePreviewMode && templatePreviewData) {
       const np = autoLayoutPositions(templatePreviewData.tables, templatePreviewData.relationships);
@@ -505,6 +506,11 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     setAiSuggestions(result.result.suggestions ?? []);
   }, [aiOptimizeMut, resolvedProjectId, setAiSuggestions, setAiSummary]);
 
+  const handleCancelAi = useCallback(() => {
+    aiGenerateMut.reset();
+    aiOptimizeMut.reset();
+  }, [aiGenerateMut, aiOptimizeMut]);
+
   const handleSaveTemplateLayout = useCallback(() => {
     if (!selectedTemplate || previewFlowNodes.length === 0 || !templatePreviewData) return;
     const nameById = new Map(templatePreviewData.tables.map(t => [t.id, t.name]));
@@ -516,17 +522,6 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     saveTemplatePreviewLayout(selectedTemplate.id, layout);
     setSavedTemplateLayouts(c => ({ ...c, [selectedTemplate.id]: layout }));
   }, [previewFlowNodes, selectedTemplate, templatePreviewData]);
-
-  const handleResetTemplateLayout = useCallback(() => {
-    if (!selectedTemplate || !templatePreviewData) return;
-    clearTemplatePreviewLayout(selectedTemplate.id);
-    setSavedTemplateLayouts(c => ({ ...c, [selectedTemplate.id]: {} }));
-    const pp = buildTemplatePreviewPositions(templatePreviewData, selectedTemplate.previewLayout ?? {});
-    const ap = autoLayoutPositions(templatePreviewData.tables, templatePreviewData.relationships, pp);
-    const np = { ...ap, ...pp };
-    setPreviewFlowNodes(ns => ns.map(n => n.type === "tableNode" && np[n.id] ? { ...n, position: np[n.id] } : n));
-    setHasFitView(false);
-  }, [selectedTemplate, templatePreviewData]);
 
   const handleCopyCode = useCallback(async () => { if (exportCodeQuery.data?.code) await navigator.clipboard.writeText(exportCodeQuery.data.code); }, [exportCodeQuery.data?.code]);
   const handleDownloadCode = useCallback(() => { if (exportCodeQuery.data) downloadTextFile(exportCodeQuery.data.filename, exportCodeQuery.data.code); }, [exportCodeQuery.data]);
@@ -579,7 +574,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       return next;
     });
     const group = await createGrpMut.mutateAsync({ name: "Comment Box", color: "#6366f11a", x: gx, y: gy, width: (maxX - minX) + pad * 2, height: (maxY - minY) + pad * 2, project_id: resolvedProjectId, table_ids: tableNodes.map(n => n.id) });
-    
+
     // Optimistically insert group into cache to prevent React Flow crash when tables lookup parentNode
     queryClient.setQueryData(["schema", resolvedProjectId], (current: any) => {
       if (!current) return current;
@@ -639,12 +634,12 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       const ry = Math.min(rcRect.startY, rcRect.currY);
       const rw = Math.max(rcRect.startX, rcRect.currX) - rx;
       const rh = Math.max(rcRect.startY, rcRect.currY) - ry;
-      
+
       if (rw > 5 || rh > 5) {
         const rect = e.currentTarget.getBoundingClientRect();
         const tl = reactFlowInstance.screenToFlowPosition({ x: rx + rect.left, y: ry + rect.top });
         const br = reactFlowInstance.screenToFlowPosition({ x: rx + rw + rect.left, y: ry + rh + rect.top });
-        
+
         const selNodes: Node[] = [];
         flowNodesRef.current.forEach(node => {
           if (node.type !== "tableNode" && node.type !== "groupNode") return;
@@ -717,6 +712,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
           handleChangeColumnType={handleChangeColumnType} handleToggleColumnProp={handleToggleColumnProp}
           handleDeleteRel={handleDeleteRel}
           selectedTemplateId={selectedTemplateId} setSelectedTemplateId={setSelectedTemplateId}
+          handleApplyTemplate={handleApplyTemplate} handleSaveTemplateLayout={handleSaveTemplateLayout}
           sqlImport={sqlImport} setSqlImport={setSqlImport}
           handleImportSql={handleImportSql} handleImportSqlFile={handleImportSqlFile}
         />
@@ -729,21 +725,23 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
               <p className={`text-[12px] font-semibold tracking-[-0.01em] ${isDark ? "text-slate-500" : "text-slate-400"}`}>Drag tables · drag column dots to connect</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              <button onClick={() => { setIsAiDrawerOpen(true); setIsCodeDrawerOpen(false); }} className={`rounded-lg border px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.1em] ${isDark ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>Assistant</button>
-              <button onClick={() => { setIsCodeDrawerOpen(true); setIsAiDrawerOpen(false); }} className={`rounded-lg border px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.1em] ${isDark ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>Code</button>
+              {/* AI Temporarily Disabled 
+              <button onClick={() => { setIsAiDrawerOpen(true); setIsCodeDrawerOpen(false); }} className={`rounded-lg border px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.1em] ${isDark ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>Ask AI</button>
+              */}
+              <button onClick={() => { setIsCodeDrawerOpen(true); setIsAiDrawerOpen(false); }} className={`rounded-lg border px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.1em] ${isDark ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>View Code</button>
               <button onClick={handleFitView} className={`rounded-lg border px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.1em] ${isDark ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>Fit View</button>
               <button onClick={() => void handleExportDiagram("png")} className={`rounded-lg border px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.1em] ${isDark ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>PNG</button>
               <span className={`rounded-lg border px-3 py-1 text-[11px] font-extrabold ${isDark ? "border-slate-700 bg-slate-900 text-slate-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>{Math.round(viewportZoom * 100)}%</span>
             </div>
           </div>
-          <div className="relative flex-1 min-h-0" 
-               onContextMenu={handleCanvasContextMenu}
-               onPointerDown={onRcPointerDown}
-               onPointerMove={onRcPointerMove}
-               onPointerUp={onRcPointerUp}
+          <div className="relative flex-1 min-h-0"
+            onContextMenu={handleCanvasContextMenu}
+            onPointerDown={onRcPointerDown}
+            onPointerMove={onRcPointerMove}
+            onPointerUp={onRcPointerUp}
           >
             {rcRect && (
-              <div 
+              <div
                 className="pointer-events-none absolute z-[100] border-2 border-indigo-400 bg-indigo-500/20 shadow-sm"
                 style={{
                   left: Math.min(rcRect.startX, rcRect.currX),
@@ -753,13 +751,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
                 }}
               />
             )}
-            {isTemplatePreviewMode && selectedTemplate && (
-              <div className="pointer-events-none absolute left-6 top-6 z-20 flex items-center gap-3">
-                <button onClick={() => void handleApplyTemplate(selectedTemplate.id)} className="pointer-events-auto rounded bg-emerald-500 px-3 py-3 text-[10px] uppercase tracking-[0.12em] text-white shadow-xl shadow-emerald-500/20 transition hover:bg-emerald-600">Add To Schema</button>
-                <button onClick={handleSaveTemplateLayout} className={`pointer-events-auto rounded px-3 py-3 text-[10px] uppercase tracking-[0.12em] shadow-xl transition ${isDark ? "border border-slate-700 bg-slate-900/95 text-slate-100 hover:border-indigo-500" : "border border-slate-200 bg-white/95 text-slate-700 hover:border-indigo-300"}`}>Save Layout</button>
-                <button onClick={handleResetTemplateLayout} className={`pointer-events-auto rounded px-3 py-3 text-[10px] uppercase tracking-[0.12em] shadow-xl transition ${isDark ? "border border-slate-700 bg-slate-900/95 text-slate-300 hover:border-slate-500" : "border border-slate-200 bg-white/95 text-slate-600 hover:border-slate-300"}`}>Reset Layout</button>
-              </div>
-            )}
+            {/* Template action buttons moved to Sidebar cards */}
 
             <div className="pointer-events-none absolute bottom-5 left-16 ml-3 z-20">
               <button onClick={handleAutoArrange} className={`pointer-events-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold tracking-wide shadow-sm transition hover:bg-slate-50 active:scale-95 ${isDark ? "border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border border-slate-200 bg-white text-slate-700"}`}>
@@ -796,7 +788,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
 
             {canWrapSelectedTables && !isTemplatePreviewMode && (
               <div className="absolute top-6 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
-                <button 
+                <button
                   onClick={() => { void handleCreateGroup(); setCanvasContextMenu(null); }}
                   className={`pointer-events-auto flex items-center gap-2 rounded-full px-5 py-3 text-[13px] font-extrabold shadow-2xl transition hover:scale-105 active:scale-95 ${isDark ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-900/50" : "bg-indigo-500 text-white hover:bg-indigo-600 shadow-indigo-500/30"}`}
                 >
@@ -808,6 +800,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
               </div>
             )}
 
+            {/* AI FEATURE TEMPORARILY DISABLED 
             {!isAiDrawerOpen && !isTemplatePreviewMode && (
               <button onClick={() => { setIsAiDrawerOpen(true); setIsCodeDrawerOpen(false); }}
                 className={`absolute right-6 bottom-6 z-20 flex h-14 w-14 items-center justify-center rounded-full border shadow-2xl transition hover:scale-105 active:scale-95 ${isDark ? "border-slate-700 bg-slate-900 text-emerald-300" : "border-slate-200 bg-white text-emerald-600"}`}
@@ -816,6 +809,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 10h8M8 14h5m-7 6 1.8-3.6A8 8 0 114 16.9V20z" /></svg>
               </button>
             )}
+            */}
           </div>
         </section>
 
@@ -831,6 +825,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
             onCopyCode={() => void handleCopyCode()} onDownloadCode={handleDownloadCode}
             aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
             onGenerateWithAi={() => void handleGenerateWithAi()} onOptimizeWithAi={() => void handleOptimizeWithAi()}
+            onCancelAi={handleCancelAi}
             aiGenerating={aiGenerateMut.isPending} aiOptimizing={aiOptimizeMut.isPending}
             aiSummary={aiSummary} aiSuggestions={aiSuggestions}
           />
