@@ -170,8 +170,8 @@ function RelationshipEdgeComponent({
         path={edgePath}
         style={{
           stroke: isDark ? `${color}dd` : `${color}bb`,
-          strokeWidth: selected ? 2.5 : 1.5,
-          opacity: selected ? 1 : 0.6,
+          strokeWidth: selected ? 4.2 : 2.8,
+          opacity: selected ? 1 : 0.8,
         }}
       />
 

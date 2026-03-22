@@ -788,7 +788,9 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
               connectionLineStyle={{ stroke: "#818cf8", strokeWidth: 2 }}
               connectionLineType={"smoothstep" as never}
             >
-              <Background id="grid-dots" variant={BackgroundVariant.Dots} gap={32} size={1} color={isDark ? "rgba(99,102,241,0.08)" : "rgba(148,163,184,0.12)"} />
+              {/* Miro-style professional grid layout */}
+              <Background id="grid-dots" variant={BackgroundVariant.Dots} gap={20} size={1} color={isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.7)"} />
+              <Background id="grid-lines" variant={BackgroundVariant.Lines} gap={160} size={1} color={isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"} />
               <Controls showZoom showFitView showInteractive={false} className={`border-none shadow-2xl ${isDark ? "bg-slate-900 fill-white" : "bg-white"}`} />
             </ReactFlow>
 

@@ -16,7 +16,7 @@ function TableNodeComponent({ data, selected }: NodeProps<TableNodeData>) {
 
   return (
     <div
-      className={`relative min-w-[300px] max-w-[350px] rounded-[6px] border shadow-sm transition-all duration-200 ${
+      className={`group relative min-w-[300px] max-w-[350px] rounded-[6px] border shadow-sm transition-all duration-200 ${
         isDark
           ? selected
             ? "border-indigo-500 bg-[#0f172a] ring-1 ring-indigo-500/50 shadow-md"
@@ -45,7 +45,7 @@ function TableNodeComponent({ data, selected }: NodeProps<TableNodeData>) {
       <div className="py-2">
         {data.columns.length > 0 ? (
           data.columns.map((column) => (
-            <ColumnItem key={column.id} column={column} isDark={isDark} accentColor={accentColor} />
+            <ColumnItem key={column.id} column={column} isDark={isDark} accentColor={accentColor} tableSelected={selected} />
           ))
         ) : (
           <div className="px-5 py-8 text-center text-[11px] font-bold text-slate-400 italic">

@@ -6,9 +6,10 @@ type ColumnItemProps = {
   column: SchemaColumn;
   isDark?: boolean;
   accentColor?: string;
+  tableSelected?: boolean;
 };
 
-function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1" }: ColumnItemProps) {
+function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1", tableSelected = false }: ColumnItemProps) {
   return (
     <div className="relative group">
       {/* Left Handle */}
@@ -17,6 +18,8 @@ function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1" }
         position={Position.Left}
         id={`${column.id}-left`}
         className={`!h-[8px] !w-[8px] !border-[1.5px] !transition-all hover:!scale-150 ${
+          tableSelected ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+        } ${
           isDark ? "!border-slate-900" : "!border-white"
         }`}
         style={{ left: "-4px", backgroundColor: accentColor }}
@@ -54,6 +57,8 @@ function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1" }
         position={Position.Right}
         id={`${column.id}-right`}
         className={`!h-[8px] !w-[8px] !border-[1.5px] !transition-all hover:!scale-150 ${
+          tableSelected ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+        } ${
           isDark ? "!border-slate-900" : "!border-white"
         }`}
         style={{ right: "-4px", backgroundColor: accentColor }}
