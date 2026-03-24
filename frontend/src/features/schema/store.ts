@@ -1,1 +1,1 @@
-export { useSchemaStore } from "../../store/useSchemaStore";
+export { selectGraphEdges, selectGraphNodes, useSchemaStore } from "../../store/useSchemaStore";

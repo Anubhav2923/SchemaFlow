@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import ReactFlow, {
   Background, BackgroundVariant, Controls,
-  applyNodeChanges, SelectionMode,
+  applyNodeChanges,
+  SelectionMode,
   type Connection, type Edge, type Node,
   type ReactFlowInstance, type OnNodesChange, type NodeChange,
 } from "reactflow";
@@ -71,9 +72,18 @@ const STATIC_EDGE_TYPES = {
 export default function ProjectEditorCore({ projectId = "", username = "", diagramSlug = "" }: ProjectEditorProps) {
   const queryClient = useQueryClient();
   const { isDark } = useTheme();
-  const { selectedNodeId, selectNode } = useSchemaStore();
+  // Zustand store: ONLY for cross-component concerns (selectedNodeId, positions)
+  const selectedNodeId = useSchemaStore((state) => state.selectedNodeId);
+  const selectNode = useSchemaStore((state) => state.selectNode);
+  const positions = useSchemaStore((state) => state.positionsById);
+  const setPersistedPositions = useSchemaStore((state) => state.setPersistedPositions);
   const { userId, getToken } = useAuth();
   const clerk = useClerk();
+
+  // Local React Flow state — this is the CORRECT pattern per React Flow docs
+  // Do NOT try to sync these through an external store in real-time
+  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
+  const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
 
   const state = useEditorState();
   const {
@@ -98,7 +108,6 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   } = state;
 
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
-  const [positions, setPositions] = useState<NodePositionMap>({});
   const [rcRect, setRcRect] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
   const [hasFitView, setHasFitView] = useState(false);
   const routeStorageKey = projectId || (username && diagramSlug ? `${username}:${diagramSlug}` : "");
@@ -128,11 +137,11 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     staleTime: 10_000,
   });
 
-  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
   const [previewFlowNodes, setPreviewFlowNodes] = useState<Node[]>([]);
   const [savedTemplateLayouts, setSavedTemplateLayouts] = useState<Record<string, TemplatePreviewLayout>>({});
   const flowNodesRef = useRef<Node[]>([]);
   const selectedNodeIdRef = useRef(selectedNodeId);
+  const selectedNodeIdsRef = useRef<string>("");
   useEffect(() => { selectedNodeIdRef.current = selectedNodeId; }, [selectedNodeId]);
 
   const tables = schemaQuery.data?.tables ?? EMPTY_TABLES;
@@ -164,7 +173,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     void getToken().then(token => setAuthToken(token ?? null));
   }, [getToken, userId]);
 
-  useEffect(() => { setPositions(loadPositions(routeStorageKey)); }, [routeStorageKey]);
+  useEffect(() => { setPersistedPositions(loadPositions(routeStorageKey)); }, [routeStorageKey, setPersistedPositions]);
   useEffect(() => { savePositions(routeStorageKey, positions); }, [positions, routeStorageKey]);
   useEffect(() => {
     if (!projectQuery.data?.database_type) return;
@@ -189,15 +198,124 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   }, [clerk, getToken, userId]);
 
   // ── Mutations ──
+  const getNextTablePosition = useCallback(() => {
+    const getAbsolutePosition = (node: Node) => {
+      if (!node.parentNode) return node.position;
+      const parentNode = flowNodesRef.current.find((item) => item.id === node.parentNode);
+      return parentNode
+        ? { x: parentNode.position.x + node.position.x, y: parentNode.position.y + node.position.y }
+        : node.position;
+    };
+
+    const existingTableRects = flowNodesRef.current
+      .filter((node) => node.type === "tableNode")
+      .map((node) => {
+        const absolute = getAbsolutePosition(node);
+        return {
+          x: absolute.x,
+          y: absolute.y,
+          width: node.width ?? 320,
+          height: node.height ?? 180,
+        };
+      });
+
+    const findOpenSlot = (candidate: { x: number; y: number }) => {
+      const tableWidth = 320;
+      const tableHeight = 180;
+      const horizontalGap = 48;
+      const verticalGap = 36;
+
+      for (let attempt = 0; attempt < 24; attempt += 1) {
+        const trial = {
+          x: Math.round(candidate.x + Math.floor(attempt / 6) * (tableWidth + horizontalGap)),
+          y: Math.round(candidate.y + (attempt % 6) * (tableHeight + verticalGap)),
+        };
+
+        const overlaps = existingTableRects.some((rect) =>
+          !(trial.x + tableWidth + 24 < rect.x ||
+            trial.x > rect.x + rect.width + 24 ||
+            trial.y + tableHeight + 24 < rect.y ||
+            trial.y > rect.y + rect.height + 24)
+        );
+
+        if (!overlaps) return trial;
+      }
+
+      return { x: Math.round(candidate.x), y: Math.round(candidate.y) };
+    };
+
+    const selectedTableNodes = flowNodesRef.current.filter((node) => node.type === "tableNode" && node.selected);
+    if (selectedTableNodes.length > 0) {
+      const selectedRects = selectedTableNodes.map((node) => {
+        const absolute = getAbsolutePosition(node);
+        return {
+          x: absolute.x,
+          y: absolute.y,
+          width: node.width ?? 320,
+          height: node.height ?? 180,
+        };
+      });
+
+      const rightEdge = Math.max(...selectedRects.map((rect) => rect.x + rect.width));
+      const centerY = selectedRects.reduce((sum, rect) => sum + rect.y + rect.height / 2, 0) / selectedRects.length;
+      return findOpenSlot({ x: rightEdge + 48, y: centerY - 90 });
+    }
+
+    const anchorId = selectedNodeIdRef.current ?? expandedTableId ?? tables[tables.length - 1]?.id ?? null;
+    const anchorNode = anchorId ? flowNodesRef.current.find((node) => node.id === anchorId && node.type === "tableNode") : null;
+    if (anchorNode) {
+      const absoluteAnchor = getAbsolutePosition(anchorNode);
+      return findOpenSlot({
+        x: absoluteAnchor.x + (anchorNode.width ?? 320) + 48,
+        y: absoluteAnchor.y,
+      });
+    }
+
+    if (reactFlowInstance) {
+      const viewportCenter = reactFlowInstance.screenToFlowPosition({
+        x: Math.round(window.innerWidth * 0.66),
+        y: Math.round(window.innerHeight * 0.5),
+      });
+      return findOpenSlot({ x: viewportCenter.x - 160, y: viewportCenter.y - 90 });
+    }
+
+    const tableNodes = flowNodesRef.current.filter((node) => node.type === "tableNode");
+    if (tableNodes.length === 0) return { x: 80, y: 80 };
+
+    const absoluteNodes = tableNodes.map((node) => {
+      const abs = getAbsolutePosition(node);
+      return {
+        x: abs.x,
+        y: abs.y,
+        width: node.width ?? 320,
+      };
+    });
+
+    const anchor = absoluteNodes.reduce((best, current) => {
+      if (!best) return current;
+      if (current.y > best.y + 40) return current;
+      if (Math.abs(current.y - best.y) <= 40 && current.x > best.x) return current;
+      return best;
+    }, absoluteNodes[0]);
+
+    return findOpenSlot({
+      x: anchor.x + anchor.width + 40,
+      y: anchor.y,
+    });
+  }, [expandedTableId, reactFlowInstance, tables]);
+
   const createTableMut = useMutation({
     mutationFn: createTable,
     onSuccess: (newTable) => {
       setTableName("");
-      const nextPos = tables.length > 0
-        ? (() => { const last = tables[tables.length - 1]; const lp = positions[last.id] || { x: 80, y: 80 }; return { x: lp.x + 360, y: lp.y }; })()
-        : { x: 80, y: 80 };
-      setPositions(prev => ({ ...prev, [newTable.id]: nextPos }));
+      const nextPos = getNextTablePosition();
+      setPersistedPositions({ [newTable.id]: nextPos });
       persistTablePosition(newTable.id, nextPos, false);
+      selectedNodeIdsRef.current = newTable.id;
+      setFlowNodes(nds => nds.map(n => ({ ...n, selected: false })));
+      setExpandedTableId(newTable.id);
+      selectNode(newTable.id);
+      reactFlowInstance?.setCenter(nextPos.x + 160, nextPos.y + 90, { zoom: 1.0, duration: 350 });
       invalidate();
     },
     onError: (e) => alert(getSchemaApiErrorMessage(e)),
@@ -255,18 +373,16 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     const gn = flowNodesRef.current.find(n => n.id === id && n.type === "groupNode");
     const children = flowNodesRef.current.filter(n => n.type === "tableNode" && n.parentNode === id);
     if (gn) {
-      setPositions(c => {
-        const next = { ...c };
-        children.forEach(tn => {
-          const abs = { x: gn.position.x + tn.position.x, y: gn.position.y + tn.position.y };
-          next[tn.id] = abs;
-          persistTablePositionRef.current(tn.id, { group_id: null, ...abs }, false);
-        });
-        return next;
+      const nextPositions: NodePositionMap = {};
+      children.forEach(tn => {
+        const abs = { x: gn.position.x + tn.position.x, y: gn.position.y + tn.position.y };
+        nextPositions[tn.id] = abs;
+        persistTablePositionRef.current(tn.id, { group_id: null, ...abs }, false);
       });
+      setPersistedPositions(nextPositions);
     }
     removeGroupRef.current(id);
-  }, []);
+  }, [setPersistedPositions]);
   const handleDeleteRelationship = useCallback(async (relationshipId: string) => {
     if (!resolvedProjectId) return;
     try {
@@ -276,6 +392,10 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       console.error("Failed to delete relationship:", err);
     }
   }, [deleteRelMut, queryClient, resolvedProjectId]);
+
+  // Stable ref so it never invalidates memos that embed it
+  const handleDeleteRelationshipRef = useRef(handleDeleteRelationship);
+  useEffect(() => { handleDeleteRelationshipRef.current = handleDeleteRelationship; }, [handleDeleteRelationship]);
 
   const onNodeResize = useCallback((nodeId: string, x: number, y: number, width: number, height: number) => {
     setFlowNodes(nds => nds.map(n => n.id === nodeId ? { ...n, position: { x, y }, style: { ...n.style, width, height } } : n));
@@ -289,21 +409,25 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     setConnectDialog({ relationshipId: rel.id, sourceColId: rel.source_column_id, targetColId: rel.target_column_id, sourceTableId: rel.source_table_id, targetTableId: rel.target_table_id });
   }, [setConnectDialog, setDialogOnDelete]);
 
+  // Stable ref — never participates in any dependency array
+  const handleRelEditRef = useRef(handleRelationshipEditInternal);
+  useEffect(() => { handleRelEditRef.current = handleRelationshipEditInternal; }, [handleRelationshipEditInternal]);
+
   const edges: Edge[] = useMemo(() => {
-    const built = buildEdges(relationships, columns, isDark, handleRelationshipEditInternal);
-    return built.map(e => {
-      const rel = relationships.find(r => r.id === e.id);
-      if (!rel) return e;
+    // Both callbacks read from refs at call-time so they are stable across renders
+    return buildEdges(relationships, columns, isDark, (rel) => handleRelEditRef.current(rel)).map(e => {
+      const relId = e.id;
       return {
         ...e,
         data: {
           ...e.data,
-          handleRemoveEdge: () => handleDeleteRelationship(rel.id)
-        }
+          handleRemoveEdge: () => handleDeleteRelationshipRef.current(relId),
+        },
       };
     });
-  }, [relationships, columns, isDark, handleDeleteRelationship, handleRelationshipEditInternal]);
-
+  // Refs are excluded intentionally — only true data deps are listed
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relationships, columns, isDark]);
 
   // ── Template preview ──
   const selectedTemplate = useMemo(() => TEMPLATE_SCHEMAS.find(t => t.id === selectedTemplateId) ?? null, [selectedTemplateId]);
@@ -316,119 +440,137 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   const templatePreviewEdges = useMemo(() => templatePreviewData ? buildEdges(templatePreviewData.relationships, templatePreviewData.columns, isDark) : [], [isDark, templatePreviewData]);
   const isTemplatePreviewMode = sidebarMode === "templates" && Boolean(selectedTemplate);
 
-  const handleTableNodeDelete = useCallback(async (tableId: string) => {
-    const ok = await ensureAuth();
-    if (!ok) return;
-    deleteTableMut.mutate(tableId);
-  }, [deleteTableMut, ensureAuth]);
+  // ── Stable callback refs for buildNodes ──
+  // These are passed into buildNodes which embeds them in node.data.
+  // Using refs prevents computedNodes from being re-created on every render,
+  // which would cause hydrateGraph to fire and trigger an infinite loop.
+  const groupCallbacksRef = useRef({
+    handleGroupRename: (_id: string, _name: string) => { },
+    handleGroupColorChange: (_id: string, _color: string) => { },
+    handleGroupRemove: (_id: string) => { },
+    onNodeResize: (_id: string, _x: number, _y: number, _w: number, _h: number) => { },
+    handleGroupResizeStop: (_id: string, _x: number, _y: number, _w: number, _h: number) => { },
+  });
+  useEffect(() => {
+    groupCallbacksRef.current.handleGroupRename = handleGroupRename;
+    groupCallbacksRef.current.handleGroupColorChange = handleGroupColorChange;
+    groupCallbacksRef.current.handleGroupRemove = handleGroupRemove;
+    groupCallbacksRef.current.onNodeResize = onNodeResize;
+    groupCallbacksRef.current.handleGroupResizeStop = handleGroupResizeStop;
+  }, [handleGroupRename, handleGroupColorChange, handleGroupRemove, onNodeResize, handleGroupResizeStop]);
 
   // ── Node computation ──
+  // Only recomputes when actual schema data changes (tables/columns/groups/isDark)
   const computedNodes = useMemo(() => buildNodes(
     tables,
     columns,
     groups,
-    positions,
+    {}, // positions are managed by hydrateGraph in the store
     isDark,
-    handleTableNodeDelete,
-    handleGroupRename,
-    handleGroupColorChange,
-    handleGroupRemove,
-    onNodeResize,
-    handleGroupResizeStop,
-  ), [tables, columns, groups, positions, isDark, handleTableNodeDelete, handleGroupRename, handleGroupColorChange, handleGroupRemove, onNodeResize, handleGroupResizeStop]);
+    (id, name) => groupCallbacksRef.current.handleGroupRename(id, name),
+    (id, color) => groupCallbacksRef.current.handleGroupColorChange(id, color),
+    (id) => groupCallbacksRef.current.handleGroupRemove(id),
+    (id, x, y, w, h) => groupCallbacksRef.current.onNodeResize(id, x, y, w, h),
+    (id, x, y, w, h) => groupCallbacksRef.current.handleGroupResizeStop(id, x, y, w, h),
+  // groupCallbacksRef is intentionally excluded — it's a stable ref
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [tables, columns, groups, isDark]);
 
-  // Synchronize nodes from schema source of truth
+  const lastHydratedRef = useRef<string>("");
+
   useEffect(() => {
     if (isDragging.current) return;
-    
-    // Use a simpler approach: only re-sync on structure change or explicit layout trigger
-    setFlowNodes((prev) => {
-      // If initialized, only update if structural changes occurred
-      const prevIds = prev.map(n => n.id).sort().join(',');
-      const currIds = computedNodes.map(n => n.id).sort().join(',');
-      
-      if (prevIds === currIds && prev.length > 0) {
-        // Just merge positions cleanly if significantly different (e.g. from Auto Layout)
-        return prev.map(pn => {
-          const cn = computedNodes.find(n => n.id === pn.id);
-          if (!cn) return pn;
-          if (Math.abs(pn.position.x - cn.position.x) > 50 || Math.abs(pn.position.y - cn.position.y) > 50) {
-             return { ...cn, selected: pn.selected };
-          }
-          return pn;
-        });
-      }
-      
-      return computedNodes;
+
+    // Compute a schema-data fingerprint (IDs + names only — no functions)
+    const fingerprint =
+      computedNodes.map(n => `${n.id}:${n.type}:${String(n.data?.name)}`).join("|") +
+      "|" +
+      edges.map(e => `${e.id}:${e.source}:${e.target}`).join("|");
+
+    if (fingerprint === lastHydratedRef.current) return;
+    lastHydratedRef.current = fingerprint;
+
+    // Merge computed nodes with live position and selection state
+    setFlowNodes(prev => {
+      const prevMap = new Map(prev.map(n => [n.id, n]));
+      return computedNodes.map(cn => {
+        const live = prevMap.get(cn.id);
+        if (!live) return { ...cn, position: positions[cn.id] ?? cn.position };
+        return {
+          ...cn,
+          position: positions[cn.id] ?? live.position,
+          selected: live.selected,
+          dragging: live.dragging,
+          width: live.width ?? cn.width,
+          height: live.height ?? cn.height,
+        };
+      });
     });
-  }, [tables, columns, groups]); // ONLY when schema data changes reference
+    setFlowEdges(edges);
+  // positions intentionally excluded — position updates go through onNodeDragStop
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computedNodes, edges]);
 
   useEffect(() => { setPreviewFlowNodes(templatePreviewNodes); }, [templatePreviewNodes]);
 
   const onNodesChange: OnNodesChange = useCallback((changes: NodeChange[]) => {
-    setFlowNodes(nds => {
-      // ── Fix: Multi-node movement ──
-      const positionChanges = changes.filter(c => c.type === 'position' && c.dragging);
-      if (positionChanges.length > 0) {
-        const selectedIds = nds.filter(n => n.selected).map(n => n.id);
-        if (selectedIds.length > 1) {
-          const extraChanges: NodeChange[] = [];
-          positionChanges.forEach(pc => {
-            const dragNode = nds.find(n => n.id === (pc as any).id);
-            if (dragNode?.selected && (pc as any).positionDelta) {
-              const delta = (pc as any).positionDelta;
-              selectedIds.forEach(id => {
-                if (id !== dragNode.id && !changes.some(c => (c as any).id === id)) {
-                  const targetNode = nds.find(n => n.id === id);
-                  if (targetNode) {
-                    extraChanges.push({
-                      id,
-                      type: 'position',
-                      dragging: true,
-                      position: {
-                        x: targetNode.position.x + delta.x,
-                        y: targetNode.position.y + delta.y
-                      }
-                    });
-                  }
-                }
-              });
-            }
-          });
-          changes = [...changes, ...extraChanges];
-        }
-      }
-
-      const updated = applyNodeChanges(changes, nds);
-      return updated.map(n => {
-        if (n.parentNode && !updated.some(p => p.id === n.parentNode)) {
-          return { ...n, parentNode: undefined };
-        }
-        if (n.type !== "groupNode") return n;
-        const orig = nds.find(o => o.id === n.id);
-        if (!orig) return n;
-        return { ...n, style: { ...orig.style, ...n.style } };
-      });
-    });
-  }, []);
-  const onPreviewNodesChange: OnNodesChange = useCallback((changes) => setPreviewFlowNodes(ns => applyNodeChanges(changes, ns)), []);
-  const onSelectionChange = useCallback(({ nodes: sel }: { nodes: Node[] }) => {
-    const tableId = sel.find(n => n.type === "tableNode")?.id ?? null;
-    
-    // Guard: Only update if the selection collection OR the primary selected table changed
-    if (tableId !== selectedNodeIdRef.current || sel.length !== selectedNodes.length) {
-      setSelectedNodes(sel);
-      if (tableId !== selectedNodeIdRef.current) {
-        selectNode(tableId);
-        if (tableId) {
-          setSidebarMode("schema");
-          setExpandedTableId(tableId);
-        }
+    let nextChanges = changes;
+    const positionChanges = changes.filter(c => c.type === "position" && c.dragging);
+    if (positionChanges.length > 0) {
+      const selectedIds = flowNodesRef.current.filter(n => n.selected).map(n => n.id);
+      if (selectedIds.length > 1) {
+        const extraChanges: NodeChange[] = [];
+        positionChanges.forEach((pc) => {
+          const changeId = "id" in pc ? pc.id : "";
+          const dragNode = flowNodesRef.current.find((n) => n.id === changeId);
+          const delta = (pc as NodeChange & { positionDelta?: { x: number; y: number } }).positionDelta;
+          if (dragNode?.selected && delta) {
+            selectedIds.forEach((id) => {
+              if (id !== dragNode.id && !changes.some((change) => "id" in change && change.id === id)) {
+                const targetNode = flowNodesRef.current.find((n) => n.id === id);
+                if (!targetNode) return;
+                extraChanges.push({ id, type: "position", dragging: true, position: {
+                  x: targetNode.position.x + delta.x,
+                  y: targetNode.position.y + delta.y,
+                }});
+              }
+            });
+          }
+        });
+        nextChanges = [...changes, ...extraChanges];
       }
     }
-  }, [selectNode, setSelectedNodes, setSidebarMode, setExpandedTableId, selectedNodes.length]);
+    setFlowNodes(nds => applyNodeChanges(nextChanges, nds));
+  }, []);
+
+  // Keep flowNodesRef in sync for drag handlers
+  useEffect(() => { flowNodesRef.current = flowNodes; }, [flowNodes]);
+
+  const onPreviewNodesChange: OnNodesChange = useCallback((changes) => setPreviewFlowNodes(ns => applyNodeChanges(changes, ns)), []);
+
+  // Sync sidebar/selection state from local flowNodes
+  useEffect(() => {
+    const nextSelected = flowNodes.filter(n => n.selected);
+    const tableId = nextSelected.find(n => n.type === "tableNode")?.id ?? null;
+    const selectionKey = nextSelected.map(n => n.id).sort().join("|");
+
+    if (selectionKey !== selectedNodeIdsRef.current) {
+      selectedNodeIdsRef.current = selectionKey;
+      setSelectedNodes(nextSelected);
+      if (tableId && tableId !== selectedNodeIdRef.current) {
+        setSidebarMode("schema");
+      }
+    }
+  }, [flowNodes, setSidebarMode, setSelectedNodes]);
 
   const canvasNodes = isTemplatePreviewMode ? previewFlowNodes : flowNodes;
+  const canvasEdges = isTemplatePreviewMode ? templatePreviewEdges : flowEdges;
+
+  const onSelectionChange = useCallback(({ nodes: sel }: { nodes: Node[] }) => {
+    // Only update the store's selectedNodeId (used by sidebar)
+    const tableId = sel.find(n => n.type === "tableNode")?.id ?? null;
+    selectNode(tableId);
+  }, [selectNode]);
 
   useEffect(() => {
     if (!reactFlowInstance || canvasNodes.length === 0 || hasFitView) return;
@@ -452,13 +594,45 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     }).sort((a, b) => Number(a.style?.width ?? 0) * Number(a.style?.height ?? 0) - Number(b.style?.width ?? 0) * Number(b.style?.height ?? 0))[0] ?? null;
   }, [flowNodes]);
 
+  const getTableFocusPosition = useCallback((tableId: string) => {
+    const table = tables.find((item) => item.id === tableId);
+    if (!table) return null;
+
+    const liveNode = flowNodesRef.current.find((node) => node.id === tableId);
+    const groupId = table.group_id ?? liveNode?.parentNode ?? null;
+    const group = groupId ? groups.find((item) => item.id === groupId) : null;
+
+    const localPosition = positions[tableId]
+      ?? (typeof table.x === "number" && Number.isFinite(table.x) && typeof table.y === "number" && Number.isFinite(table.y)
+        ? { x: table.x, y: table.y }
+        : liveNode?.position);
+
+    const basePosition = localPosition ?? { x: 80, y: 80 };
+
+    if (!group) {
+      return {
+        x: basePosition.x,
+        y: basePosition.y,
+        width: liveNode?.width ?? 320,
+        height: liveNode?.height ?? 180,
+      };
+    }
+
+    return {
+      x: group.x + basePosition.x,
+      y: group.y + basePosition.y,
+      width: liveNode?.width ?? 320,
+      height: liveNode?.height ?? 180,
+    };
+  }, [groups, positions, tables]);
+
   const focusTable = useCallback((tableId: string) => {
-    const node = flowNodes.find(n => n.id === tableId);
-    if (!node || !reactFlowInstance) return;
-    const abs = getAbsoluteNodePosition(node);
-    reactFlowInstance.setCenter(abs.x + (node.width ?? 320) / 2, abs.y + (node.height ?? 180) / 2, { zoom: 1.0, duration: 400 });
+    if (!reactFlowInstance) return;
+    const target = getTableFocusPosition(tableId);
+    if (!target) return;
+    reactFlowInstance.setCenter(target.x + target.width / 2, target.y + target.height / 2, { zoom: 1.0, duration: 400 });
     selectNode(tableId);
-  }, [flowNodes, reactFlowInstance, selectNode, getAbsoluteNodePosition]);
+  }, [getTableFocusPosition, reactFlowInstance, selectNode]);
 
   const onNodeDragStart = useCallback((_e: unknown, node: Node) => {
     isDragging.current = true;
@@ -491,25 +665,41 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
 
       if (containing) {
         const rel = { x: abs.x - containing.position.x, y: abs.y - containing.position.y };
-        setPositions(c => ({ ...c, [trackedNode.id]: rel }));
+        setPersistedPositions({ [trackedNode.id]: rel });
         persistTablePosition(trackedNode.id, { group_id: nextGroupId, ...rel }, currentGroupId !== nextGroupId);
         return;
       }
 
-      setPositions(c => ({ ...c, [trackedNode.id]: abs }));
+      setPersistedPositions({ [trackedNode.id]: abs });
       persistTablePosition(trackedNode.id, { group_id: null, ...abs }, currentGroupId !== null);
     });
-  }, [findContainingGroup, getAbsoluteNodePosition, mutateGroup, persistTablePosition, tables]);
+  }, [findContainingGroup, getAbsoluteNodePosition, mutateGroup, persistTablePosition, setPersistedPositions, tables]);
 
   // ── Action handlers ──
+  const normalizeTableName = useCallback((value: string) => value.trim().toLowerCase(), []);
   const handleCreateTable = useCallback(async (e: FormEvent) => {
-    e.preventDefault(); if (!tableName.trim() || !resolvedProjectId) return;
+    e.preventDefault();
+    const nextName = tableName.trim();
+    if (!nextName || !resolvedProjectId) return;
+    if (tables.some((table) => normalizeTableName(table.name) === normalizeTableName(nextName))) {
+      alert(`A table named "${nextName}" already exists in this project.`);
+      return;
+    }
     const ok = await ensureAuth(); if (!ok) return;
-    await createTableMut.mutateAsync({ name: tableName.trim(), project_id: resolvedProjectId });
-  }, [createTableMut, ensureAuth, resolvedProjectId, tableName]);
+    await createTableMut.mutateAsync({ name: nextName, project_id: resolvedProjectId });
+  }, [createTableMut, ensureAuth, normalizeTableName, resolvedProjectId, tableName, tables]);
 
   const handleDeleteTable = useCallback(async (tableId: string) => { const ok = await ensureAuth(); if (!ok) return; deleteTableMut.mutate(tableId); }, [deleteTableMut, ensureAuth]);
-  const handleRenameTable = useCallback(async (tableId: string) => { if (!renameTableValue.trim()) { setRenamingTableId(null); return; } const ok = await ensureAuth(); if (!ok) return; renameTableMut.mutate({ id: tableId, name: renameTableValue.trim() }); }, [ensureAuth, renameTableMut, renameTableValue, setRenamingTableId]);
+  const handleRenameTable = useCallback(async (tableId: string) => {
+    const nextName = renameTableValue.trim();
+    if (!nextName) { setRenamingTableId(null); return; }
+    if (tables.some((table) => table.id !== tableId && normalizeTableName(table.name) === normalizeTableName(nextName))) {
+      alert(`A table named "${nextName}" already exists in this project.`);
+      return;
+    }
+    const ok = await ensureAuth(); if (!ok) return;
+    renameTableMut.mutate({ id: tableId, name: nextName });
+  }, [ensureAuth, normalizeTableName, renameTableMut, renameTableValue, setRenamingTableId, tables]);
   const handleAddColumn = useCallback(async (tableId: string) => { if (!newColName.trim()) return; const ok = await ensureAuth(); if (!ok) return; addColMut.mutate({ name: newColName.trim(), data_type: newColType, table_id: tableId, is_primary: newColPK, is_unique: newColUnique, is_nullable: !newColNotNull }); }, [addColMut, ensureAuth, newColName, newColNotNull, newColPK, newColType, newColUnique]);
   const handleDeleteColumn = useCallback(async (colId: string) => { const ok = await ensureAuth(); if (!ok) return; deleteColMut.mutate(colId); }, [deleteColMut, ensureAuth]);
   const handleRenameColumn = useCallback(async (colId: string) => { if (!renameColValue.trim()) { setRenamingColId(null); return; } const ok = await ensureAuth(); if (!ok) return; updateColMut.mutate({ id: colId, name: renameColValue.trim() }); }, [ensureAuth, updateColMut, renameColValue, setRenamingColId]);
@@ -545,18 +735,28 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       setHasFitView(false); return;
     }
     const np = autoLayoutPositions(tables, relationships, positions);
-    setPositions(c => ({ ...c, ...np }));
+    setPersistedPositions(np);
     tables.forEach(t => { if (!np[t.id] || t.group_id) return; persistTablePosition(t.id, { x: np[t.id].x, y: np[t.id].y }, false); });
     setHasFitView(false);
-  }, [isTemplatePreviewMode, persistTablePosition, positions, relationships, tables, templatePreviewData]);
+  }, [isTemplatePreviewMode, persistTablePosition, positions, relationships, setPersistedPositions, tables, templatePreviewData]);
 
-  const applyImportedSchema = useCallback(async (schema: { summary?: string; tables: { name: string; columns: { name: string; data_type: string; is_nullable?: boolean; is_primary?: boolean; is_unique?: boolean; default_value?: string | null }[] }[]; relationships: { sourceTable: string; sourceColumn: string; targetTable: string; targetColumn: string; on_delete?: string; on_update?: string }[] }) => {
+  const applyImportedSchema = useCallback(async (
+    schema: { summary?: string; tables: { name: string; columns: { name: string; data_type: string; is_nullable?: boolean; is_primary?: boolean; is_unique?: boolean; default_value?: string | null }[] }[]; relationships: { sourceTable: string; sourceColumn: string; targetTable: string; targetColumn: string; on_delete?: string; on_update?: string }[] },
+    importedLayout?: TemplatePreviewLayout,
+  ) => {
     if (!resolvedProjectId) return;
     const ok = await ensureAuth(); if (!ok) return;
     const token = await getToken(); setAuthToken(token);
     const createdTables = new Map<string, string>(); const createdColumns = new Map<string, string>();
+    const nextPositions: NodePositionMap = {};
     for (const table of schema.tables) {
-      const ct = await createTable({ name: table.name.trim(), project_id: resolvedProjectId }); createdTables.set(table.name, ct.id);
+      const normalizedName = table.name.trim();
+      const ct = await createTable({ name: normalizedName, project_id: resolvedProjectId }); createdTables.set(table.name, ct.id);
+      const layoutPosition = importedLayout?.[normalizedName];
+      if (layoutPosition) {
+        nextPositions[ct.id] = { x: layoutPosition.x, y: layoutPosition.y };
+        persistTablePosition(ct.id, { x: layoutPosition.x, y: layoutPosition.y }, false);
+      }
       for (let i = 0; i < table.columns.length; i++) {
         const col = table.columns[i];
         const cc = await createColumn({ name: col.name.trim(), data_type: col.data_type.trim(), table_id: ct.id, is_nullable: col.is_nullable ?? true, is_primary: col.is_primary ?? false, is_unique: col.is_unique ?? false, default_value: col.default_value ?? undefined, position: i });
@@ -569,14 +769,27 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       if (!sti || !tti || !sci || !tci) continue;
       await createRelationship({ source_table_id: sti, source_column_id: sci, target_table_id: tti, target_column_id: tci, on_delete: rel.on_delete ?? "CASCADE", on_update: rel.on_update ?? "CASCADE" });
     }
+    if (Object.keys(nextPositions).length > 0) {
+      setPersistedPositions(nextPositions);
+    }
     await queryClient.invalidateQueries({ queryKey: ["schema", resolvedProjectId] });
     setAiSummary(schema.summary ?? "Schema imported successfully.");
-  }, [ensureAuth, getToken, queryClient, resolvedProjectId, setAiSummary]);
+  }, [ensureAuth, getToken, persistTablePosition, queryClient, resolvedProjectId, setAiSummary, setPersistedPositions]);
 
   const handleApplyTemplate = useCallback(async (templateId: string) => {
     const t = TEMPLATE_SCHEMAS.find(i => i.id === templateId); if (!t) return;
-    await applyImportedSchema(t.schema); setSelectedTemplateId(null); setSidebarMode("schema");
-  }, [applyImportedSchema, setSelectedTemplateId, setSidebarMode]);
+    const previewData = buildTemplatePreviewSchema(t.schema);
+    const preferredLayout = savedTemplateLayouts[t.id] ?? {};
+    const templateLayout = computeTemplatePreviewPositions(t, previewData, preferredLayout);
+    const layoutByName = previewData.tables.reduce<TemplatePreviewLayout>((acc, table) => {
+      const position = templateLayout[table.id];
+      if (position) acc[table.name] = position;
+      return acc;
+    }, {});
+    await applyImportedSchema(t.schema, layoutByName);
+    setSelectedTemplateId(null);
+    setSidebarMode("schema");
+  }, [applyImportedSchema, savedTemplateLayouts, setSelectedTemplateId, setSidebarMode]);
 
   const handleImportSql = useCallback(async () => {
     const parsed = parseSqlDump(sqlImport);
@@ -662,15 +875,13 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       minX = Math.min(minX, ax); minY = Math.min(minY, ay); maxX = Math.max(maxX, ax + (n.width ?? 320)); maxY = Math.max(maxY, ay + (n.height ?? 180));
     });
     const pad = 60; const gx = minX - pad; const gy = minY - pad;
-    setPositions(prev => {
-      const next = { ...prev };
+      const nextPositions: NodePositionMap = {};
       tableNodes.forEach(n => {
         let ax = n.position.x, ay = n.position.y;
         if (n.parentNode) { const p = flowNodes.find(pn => pn.id === n.parentNode); if (p) { ax += p.position.x; ay += p.position.y; } }
-        next[n.id] = { x: ax - gx, y: ay - gy };
+        nextPositions[n.id] = { x: ax - gx, y: ay - gy };
       });
-      return next;
-    });
+      setPersistedPositions(nextPositions);
     const group = await createGrpMut.mutateAsync({ name: "Comment Box", color: "#6366f11a", x: gx, y: gy, width: (maxX - minX) + pad * 2, height: (maxY - minY) + pad * 2, project_id: resolvedProjectId, table_ids: tableNodes.map(n => n.id) });
 
     // Optimistically insert group into cache to prevent React Flow crash when tables lookup parentNode
@@ -684,11 +895,19 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       if (n.parentNode) { const p = flowNodes.find(pn => pn.id === n.parentNode); if (p) { ax += p.position.x; ay += p.position.y; } }
       persistTablePosition(n.id, { group_id: group.id, x: ax - gx, y: ay - gy }, false);
     });
-  }, [createGrpMut, ensureAuth, flowNodes, persistTablePosition, reactFlowInstance, resolvedProjectId, selectedNodes, queryClient]);
+  }, [createGrpMut, ensureAuth, flowNodes, persistTablePosition, reactFlowInstance, resolvedProjectId, selectedNodes, queryClient, setPersistedPositions]);
 
   const handleCanvasContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (isTemplatePreviewMode) return; event.preventDefault(); setCanvasContextMenu({ x: event.clientX, y: event.clientY });
   }, [isTemplatePreviewMode, setCanvasContextMenu]);
+
+  const clearCanvasSelection = useCallback(() => {
+    selectedNodeIdsRef.current = "";
+    setFlowNodes(nds => nds.map(n => ({ ...n, selected: false })));
+    setSelectedNodes([]);
+    selectNode(null);
+    setCanvasContextMenu(null);
+  }, [selectNode, setSelectedNodes, setCanvasContextMenu]);
 
   useEffect(() => {
     if (!canvasContextMenu) return;
@@ -754,7 +973,8 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
         });
 
         if (selNodes.length > 0) {
-          setFlowNodes(nds => nds.map(n => ({ ...n, selected: selNodes.some(sn => sn.id === n.id) })));
+          selectedNodeIdsRef.current = selNodes.map((node) => node.id).sort().join("|");
+          setFlowNodes(nds => nds.map(n => ({ ...n, selected: selNodes.some(s => s.id === n.id) })));
           setSelectedNodes(selNodes);
           const first = selNodes.find(n => n.type === "tableNode")?.id ?? null;
           selectNode(first);
@@ -763,7 +983,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       setRcRect(null);
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-  }, [rcRect, reactFlowInstance, setSelectedNodes, selectNode]);
+  }, [rcRect, reactFlowInstance, selectNode, setSelectedNodes]);
 
   return (
     <div className="h-full w-full relative">
@@ -861,12 +1081,17 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
             <ReactFlow
               onInit={setReactFlowInstance}
               onMove={(_e, vp) => { if (!Number.isNaN(vp.zoom)) setViewportZoom(vp.zoom); }}
-              nodes={canvasNodes} edges={isTemplatePreviewMode ? templatePreviewEdges : edges}
+              nodes={canvasNodes} edges={canvasEdges}
               nodeTypes={STATIC_NODE_TYPES} edgeTypes={STATIC_EDGE_TYPES}
               onNodesChange={isTemplatePreviewMode ? onPreviewNodesChange : onNodesChange}
               onNodeDragStart={onNodeDragStart}
               onNodeDragStop={isTemplatePreviewMode ? () => { isDragging.current = false; } : onNodeDragStop}
               onEdgesChange={undefined}
+              onNodeClick={isTemplatePreviewMode ? undefined : (_e, node) => {
+                selectNode(node.id);
+                setCanvasContextMenu(null);
+              }}
+              onPaneClick={isTemplatePreviewMode ? undefined : clearCanvasSelection}
               onSelectionChange={isTemplatePreviewMode ? undefined : onSelectionChange}
               onConnect={isTemplatePreviewMode ? undefined : onConnect}
               fitView={!hasFitView}
