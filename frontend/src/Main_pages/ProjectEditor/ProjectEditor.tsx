@@ -28,8 +28,11 @@ import { useEditorState } from "./hooks/useEditorState";
 import { EditorSidebar } from "./components/EditorSidebar";
 import { RightDrawer } from "./components/RightDrawer";
 import { ConnectDialog } from "./components/ConnectDialog";
+import { TableNode } from "../../components/schema/TableNode";
+import { GroupNode } from "../../components/schema/GroupNode";
+import { RelationshipEdge } from "../../components/schema/RelationshipEdge";
 import {
-  NODE_TYPES, EDGE_TYPES, EMPTY_TABLES, EMPTY_COLUMNS, EMPTY_RELS,
+  EMPTY_TABLES, EMPTY_COLUMNS, EMPTY_RELS,
   TEMPLATE_SCHEMAS,
 } from "./constants";
 import {
@@ -56,6 +59,14 @@ interface ProjectEditorProps {
   username?: string;
   diagramSlug?: string;
 }
+
+const STATIC_NODE_TYPES = {
+  tableNode: TableNode,
+  groupNode: GroupNode
+};
+const STATIC_EDGE_TYPES = {
+  relationshipEdge: RelationshipEdge
+};
 
 export default function ProjectEditorCore({ projectId = "", username = "", diagramSlug = "" }: ProjectEditorProps) {
   const queryClient = useQueryClient();
@@ -89,14 +100,10 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [positions, setPositions] = useState<NodePositionMap>({});
   const [rcRect, setRcRect] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
-  const nodeTypes = useMemo(() => NODE_TYPES, []);
-  const edgeTypes = useMemo(() => EDGE_TYPES, []);
   const [hasFitView, setHasFitView] = useState(false);
-  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
-  const [previewFlowNodes, setPreviewFlowNodes] = useState<Node[]>([]);
-  const [savedTemplateLayouts, setSavedTemplateLayouts] = useState<Record<string, TemplatePreviewLayout>>({});
-  const flowNodesRef = useRef<Node[]>([]);
   const routeStorageKey = projectId || (username && diagramSlug ? `${username}:${diagramSlug}` : "");
+  const isDragging = useRef(false);
+  const dragSelectionRef = useRef<string[]>([]);
 
   // ── Queries ──
   const projectQuery = useQuery({
@@ -120,6 +127,13 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     enabled: Boolean(resolvedProjectId && isCodeDrawerOpen),
     staleTime: 10_000,
   });
+
+  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
+  const [previewFlowNodes, setPreviewFlowNodes] = useState<Node[]>([]);
+  const [savedTemplateLayouts, setSavedTemplateLayouts] = useState<Record<string, TemplatePreviewLayout>>({});
+  const flowNodesRef = useRef<Node[]>([]);
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  useEffect(() => { selectedNodeIdRef.current = selectedNodeId; }, [selectedNodeId]);
 
   const tables = schemaQuery.data?.tables ?? EMPTY_TABLES;
   const columns = schemaQuery.data?.columns ?? EMPTY_COLUMNS;
@@ -253,6 +267,16 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     }
     removeGroupRef.current(id);
   }, []);
+  const handleDeleteRelationship = useCallback(async (relationshipId: string) => {
+    if (!resolvedProjectId) return;
+    try {
+      await deleteRelMut.mutateAsync(relationshipId);
+      queryClient.invalidateQueries({ queryKey: ["schema", resolvedProjectId] });
+    } catch (err) {
+      console.error("Failed to delete relationship:", err);
+    }
+  }, [deleteRelMut, queryClient, resolvedProjectId]);
+
   const onNodeResize = useCallback((nodeId: string, x: number, y: number, width: number, height: number) => {
     setFlowNodes(nds => nds.map(n => n.id === nodeId ? { ...n, position: { x, y }, style: { ...n.style, width, height } } : n));
   }, []);
@@ -260,17 +284,26 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     onNodeResize(id, x, y, width, height); mutateGroupRef.current({ id, x, y, width, height });
   }, [onNodeResize]);
 
-  // ── Edit relationship callback ──
-  const handleEditRelationship = useCallback((rel: SchemaRelationship) => {
+  const handleRelationshipEditInternal = useCallback((rel: SchemaRelationship) => {
     setDialogOnDelete(rel.on_delete as "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION");
-    const srcCol = columns.find(c => c.id === rel.source_column_id);
-    const tgtCol = columns.find(c => c.id === rel.target_column_id);
-    const card = (srcCol?.is_primary || srcCol?.is_unique) && (tgtCol?.is_primary || tgtCol?.is_unique) ? "one-to-one" : (srcCol?.is_primary || srcCol?.is_unique) ? "one-to-many" : "many-to-many";
-    setDialogCardinality(card);
     setConnectDialog({ relationshipId: rel.id, sourceColId: rel.source_column_id, targetColId: rel.target_column_id, sourceTableId: rel.source_table_id, targetTableId: rel.target_table_id });
-  }, [columns, setDialogCardinality, setDialogOnDelete, setConnectDialog]);
+  }, [setConnectDialog, setDialogOnDelete]);
 
-  const edges: Edge[] = useMemo(() => buildEdges(relationships, columns, isDark, handleEditRelationship), [relationships, columns, isDark, handleEditRelationship]);
+  const edges: Edge[] = useMemo(() => {
+    const built = buildEdges(relationships, columns, isDark, handleRelationshipEditInternal);
+    return built.map(e => {
+      const rel = relationships.find(r => r.id === e.id);
+      if (!rel) return e;
+      return {
+        ...e,
+        data: {
+          ...e.data,
+          handleRemoveEdge: () => handleDeleteRelationship(rel.id)
+        }
+      };
+    });
+  }, [relationships, columns, isDark, handleDeleteRelationship, handleRelationshipEditInternal]);
+
 
   // ── Template preview ──
   const selectedTemplate = useMemo(() => TEMPLATE_SCHEMAS.find(t => t.id === selectedTemplateId) ?? null, [selectedTemplateId]);
@@ -283,13 +316,53 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   const templatePreviewEdges = useMemo(() => templatePreviewData ? buildEdges(templatePreviewData.relationships, templatePreviewData.columns, isDark) : [], [isDark, templatePreviewData]);
   const isTemplatePreviewMode = sidebarMode === "templates" && Boolean(selectedTemplate);
 
-  // ── Node computation ──
-  const computedNodes = useMemo(() => buildNodes(tables, columns, groups, positions, isDark, handleGroupRename, handleGroupColorChange, handleGroupRemove, onNodeResize, handleGroupResizeStop),
-    [tables, columns, groups, positions, isDark, handleGroupRename, handleGroupColorChange, handleGroupRemove, onNodeResize, handleGroupResizeStop]);
+  const handleTableNodeDelete = useCallback(async (tableId: string) => {
+    const ok = await ensureAuth();
+    if (!ok) return;
+    deleteTableMut.mutate(tableId);
+  }, [deleteTableMut, ensureAuth]);
 
-  const isDragging = useRef(false);
-  useEffect(() => { if (isDragging.current) return; flowNodesRef.current = computedNodes; setFlowNodes(computedNodes); }, [computedNodes]);
-  useEffect(() => { flowNodesRef.current = flowNodes; }, [flowNodes]);
+  // ── Node computation ──
+  const computedNodes = useMemo(() => buildNodes(
+    tables,
+    columns,
+    groups,
+    positions,
+    isDark,
+    handleTableNodeDelete,
+    handleGroupRename,
+    handleGroupColorChange,
+    handleGroupRemove,
+    onNodeResize,
+    handleGroupResizeStop,
+  ), [tables, columns, groups, positions, isDark, handleTableNodeDelete, handleGroupRename, handleGroupColorChange, handleGroupRemove, onNodeResize, handleGroupResizeStop]);
+
+  // Synchronize nodes from schema source of truth
+  useEffect(() => {
+    if (isDragging.current) return;
+    
+    // Use a simpler approach: only re-sync on structure change or explicit layout trigger
+    setFlowNodes((prev) => {
+      // If initialized, only update if structural changes occurred
+      const prevIds = prev.map(n => n.id).sort().join(',');
+      const currIds = computedNodes.map(n => n.id).sort().join(',');
+      
+      if (prevIds === currIds && prev.length > 0) {
+        // Just merge positions cleanly if significantly different (e.g. from Auto Layout)
+        return prev.map(pn => {
+          const cn = computedNodes.find(n => n.id === pn.id);
+          if (!cn) return pn;
+          if (Math.abs(pn.position.x - cn.position.x) > 50 || Math.abs(pn.position.y - cn.position.y) > 50) {
+             return { ...cn, selected: pn.selected };
+          }
+          return pn;
+        });
+      }
+      
+      return computedNodes;
+    });
+  }, [tables, columns, groups]); // ONLY when schema data changes reference
+
   useEffect(() => { setPreviewFlowNodes(templatePreviewNodes); }, [templatePreviewNodes]);
 
   const onNodesChange: OnNodesChange = useCallback((changes: NodeChange[]) => {
@@ -340,20 +413,22 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   }, []);
   const onPreviewNodesChange: OnNodesChange = useCallback((changes) => setPreviewFlowNodes(ns => applyNodeChanges(changes, ns)), []);
   const onSelectionChange = useCallback(({ nodes: sel }: { nodes: Node[] }) => {
-    setSelectedNodes(sel);
     const tableId = sel.find(n => n.type === "tableNode")?.id ?? null;
-    if (tableId !== selectedNodeId) {
-      selectNode(tableId);
-      // ── Fix: Sync Canvas Selection to Sidebar ──
-      if (tableId) {
-        setSidebarMode("schema"); // Switch to Tables (schema) tab
-        setExpandedTableId(tableId); // Expand the clicked table in the sidebar
+    
+    // Guard: Only update if the selection collection OR the primary selected table changed
+    if (tableId !== selectedNodeIdRef.current || sel.length !== selectedNodes.length) {
+      setSelectedNodes(sel);
+      if (tableId !== selectedNodeIdRef.current) {
+        selectNode(tableId);
+        if (tableId) {
+          setSidebarMode("schema");
+          setExpandedTableId(tableId);
+        }
       }
     }
-  }, [selectNode, selectedNodeId, setSelectedNodes, setSidebarMode, setExpandedTableId]);
+  }, [selectNode, setSelectedNodes, setSidebarMode, setExpandedTableId, selectedNodes.length]);
 
   const canvasNodes = isTemplatePreviewMode ? previewFlowNodes : flowNodes;
-  const canvasEdges = isTemplatePreviewMode ? templatePreviewEdges : edges;
 
   useEffect(() => {
     if (!reactFlowInstance || canvasNodes.length === 0 || hasFitView) return;
@@ -385,22 +460,45 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     selectNode(tableId);
   }, [flowNodes, reactFlowInstance, selectNode, getAbsoluteNodePosition]);
 
-  const onNodeDragStart = useCallback(() => { isDragging.current = true; }, []);
+  const onNodeDragStart = useCallback((_e: unknown, node: Node) => {
+    isDragging.current = true;
+    const selectedIds = flowNodesRef.current.filter((n) => n.selected).map((n) => n.id);
+    dragSelectionRef.current = selectedIds.includes(node.id) ? selectedIds : [node.id];
+  }, []);
   const onNodeDragStop = useCallback((_e: unknown, node: Node) => {
     isDragging.current = false;
-    if (node.type === "groupNode") { mutateGroup({ id: node.id, x: node.position.x, y: node.position.y }); return; }
-    const abs = getAbsoluteNodePosition(node);
-    const containing = findContainingGroup(node, abs);
-    const nextGroupId = containing?.id ?? null;
-    const currentGroupId = node.parentNode ?? tables.find(t => t.id === node.id)?.group_id ?? null;
-    if (containing) {
-      const rel = { x: abs.x - containing.position.x, y: abs.y - containing.position.y };
-      setPositions(c => ({ ...c, [node.id]: rel }));
-      persistTablePosition(node.id, { group_id: nextGroupId, ...rel }, currentGroupId !== nextGroupId);
-    } else {
-      setPositions(c => ({ ...c, [node.id]: abs }));
-      persistTablePosition(node.id, { group_id: null, ...abs }, currentGroupId !== null);
-    }
+    const trackedIds = dragSelectionRef.current.length > 0 ? dragSelectionRef.current : [node.id];
+    dragSelectionRef.current = [];
+    const currentNodes = flowNodesRef.current;
+    const trackedNodes = trackedIds
+      .map((id) => currentNodes.find((n) => n.id === id))
+      .filter((n): n is Node => Boolean(n));
+
+    const movedGroupIds = new Set(trackedNodes.filter((n) => n.type === "groupNode").map((n) => n.id));
+
+    trackedNodes.forEach((trackedNode) => {
+      if (trackedNode.type === "groupNode") {
+        mutateGroup({ id: trackedNode.id, x: trackedNode.position.x, y: trackedNode.position.y });
+        return;
+      }
+
+      if (trackedNode.parentNode && movedGroupIds.has(trackedNode.parentNode)) return;
+
+      const abs = getAbsoluteNodePosition(trackedNode);
+      const containing = findContainingGroup(trackedNode, abs);
+      const nextGroupId = containing?.id ?? null;
+      const currentGroupId = trackedNode.parentNode ?? tables.find(t => t.id === trackedNode.id)?.group_id ?? null;
+
+      if (containing) {
+        const rel = { x: abs.x - containing.position.x, y: abs.y - containing.position.y };
+        setPositions(c => ({ ...c, [trackedNode.id]: rel }));
+        persistTablePosition(trackedNode.id, { group_id: nextGroupId, ...rel }, currentGroupId !== nextGroupId);
+        return;
+      }
+
+      setPositions(c => ({ ...c, [trackedNode.id]: abs }));
+      persistTablePosition(trackedNode.id, { group_id: null, ...abs }, currentGroupId !== null);
+    });
   }, [findContainingGroup, getAbsoluteNodePosition, mutateGroup, persistTablePosition, tables]);
 
   // ── Action handlers ──
@@ -761,19 +859,20 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
             </div>
 
             <ReactFlow
-              key={isTemplatePreviewMode ? `template-preview-${selectedTemplateId}` : "schemaforge-canvas"}
               onInit={setReactFlowInstance}
               onMove={(_e, vp) => { if (!Number.isNaN(vp.zoom)) setViewportZoom(vp.zoom); }}
-              nodes={canvasNodes} edges={canvasEdges}
-              nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+              nodes={canvasNodes} edges={isTemplatePreviewMode ? templatePreviewEdges : edges}
+              nodeTypes={STATIC_NODE_TYPES} edgeTypes={STATIC_EDGE_TYPES}
               onNodesChange={isTemplatePreviewMode ? onPreviewNodesChange : onNodesChange}
               onNodeDragStart={onNodeDragStart}
               onNodeDragStop={isTemplatePreviewMode ? () => { isDragging.current = false; } : onNodeDragStop}
-              onNodeClick={isTemplatePreviewMode ? undefined : (_e, node) => { setSelectedNodes([node]); selectNode(node.type === "tableNode" ? node.id : null); setCanvasContextMenu(null); }}
-              onPaneClick={isTemplatePreviewMode ? undefined : () => { setSelectedNodes([]); selectNode(null); setCanvasContextMenu(null); }}
+              onEdgesChange={undefined}
               onSelectionChange={isTemplatePreviewMode ? undefined : onSelectionChange}
               onConnect={isTemplatePreviewMode ? undefined : onConnect}
-              fitView={!hasFitView} panOnDrag={[0, 1]} selectionOnDrag={true}
+              fitView={!hasFitView}
+              fitViewOptions={{ padding: 0.2 }}
+              snapToGrid snapGrid={[20, 20]}
+              panOnDrag={[0, 1]} selectionOnDrag={true}
               selectionMode={SelectionMode.Partial} nodesDraggable nodesConnectable={!isTemplatePreviewMode}
               elementsSelectable onlyRenderVisibleElements minZoom={0.05} maxZoom={4}
               defaultViewport={{ x: 80, y: 80, zoom: 0.9 }}

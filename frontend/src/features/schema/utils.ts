@@ -245,6 +245,7 @@ export function buildNodes(
   groups: SchemaGroup[] = [],
   positions: NodePositionMap = {},
   isDark = false,
+  onTableDelete?: (id: string) => void,
   onGroupRename?: (id: string, name: string) => void,
   onGroupColorChange?: (id: string, color: string) => void,
   onGroupRemove?: (id: string) => void,
@@ -336,6 +337,7 @@ export function buildNodes(
         columns: tableColumns,
         isDark,
         accentColor,
+        onDelete: () => onTableDelete?.(table.id),
       },
     };
   });
@@ -370,9 +372,6 @@ export function buildEdges(
       data: {
         isDark,
         cardinality,
-        sourceColumnName: sourceCol?.name,
-        targetColumnName: targetCol?.name,
-        onDelete: rel.on_delete,
         relationshipId: rel.id,
         onEdit: () => onEdit?.(rel),
       },
