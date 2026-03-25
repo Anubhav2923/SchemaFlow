@@ -1,6 +1,6 @@
 import type { NodePositionMap } from "../../features/schema/utils";
 import type { SchemaTable, SchemaColumn, SchemaRelationship } from "../../features/schema/api";
-import type { ImportableSchema, PreviewSchemaData, TemplatePreviewLayout, TemplateSchema } from "./constants";
+import type { ImportableSchema, ImportableSchemaMetadata, PreviewSchemaData, TemplatePreviewLayout, TemplateSchema } from "./constants";
 import { autoLayoutPositions } from "../../features/schema/utils";
 
 // ─── Local storage helpers ────────────────────────────────────────────────────
@@ -62,11 +62,83 @@ function splitSqlDefinitions(value: string) {
   return parts;
 }
 
+function normalizeIdentifier(value: string) {
+  return value.replace(/["`]/g, "").trim();
+}
+
+function extractConstraintClause(input: string, keyword: string) {
+  const match = input.match(
+    new RegExp(`${keyword}\\s+(.+?)(?=(?:\\s+(?:NOT\\s+NULL|NULL|UNIQUE|PRIMARY\\s+KEY|REFERENCES|CHECK|CONSTRAINT))|$)`, "i"),
+  );
+  return match?.[1]?.trim() ?? null;
+}
+
+function extractDataType(remainder: string) {
+  const constraintMatch = remainder.match(/\s+(?:NOT\s+NULL|NULL|UNIQUE|PRIMARY\s+KEY|DEFAULT|REFERENCES|CHECK|CONSTRAINT)\b/i);
+  if (!constraintMatch?.index) {
+    return remainder.trim();
+  }
+
+  return remainder.slice(0, constraintMatch.index).trim();
+}
+
+function parseCheckExpressions(definition: string) {
+  return [...definition.matchAll(/CHECK\s*\(([\s\S]*?)\)/gi)].map((match) => match[1].trim());
+}
+
+function parseIndexColumns(value: string) {
+  return splitSqlDefinitions(value).map((part) => normalizeIdentifier(part));
+}
+
+function addRelationship(
+  relationships: ImportableSchema["relationships"],
+  relationship: ImportableSchema["relationships"][number],
+) {
+  const key = [
+    relationship.sourceTable,
+    relationship.sourceColumn,
+    relationship.targetTable,
+    relationship.targetColumn,
+  ].join("|");
+
+  if (relationships.some((existing) => [
+    existing.sourceTable,
+    existing.sourceColumn,
+    existing.targetTable,
+    existing.targetColumn,
+  ].join("|") === key)) {
+    return;
+  }
+
+  relationships.push(relationship);
+}
+
 export function parseSqlDump(sql: string): ImportableSchema {
   const tables: ImportableSchema["tables"] = [];
   const relationships: ImportableSchema["relationships"] = [];
+  const metadata: Required<ImportableSchemaMetadata> = {
+    dialect: "postgresql",
+    extensions: [],
+    enumTypes: [],
+    checks: [],
+    indexes: [],
+  };
   const normalized = sql.replace(/\r/g, "");
-  const tableMatches = [...normalized.matchAll(/CREATE\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(([\s\S]*?)\);/gi)];
+  const tableMatches = [...normalized.matchAll(/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(([\s\S]*?)\);/gi)];
+
+  for (const match of normalized.matchAll(/CREATE\s+EXTENSION(?:\s+IF\s+NOT\s+EXISTS)?\s+["`]?([a-zA-Z0-9_]+)["`]?/gi)) {
+    const extensionName = normalizeIdentifier(match[1]);
+    if (!metadata.extensions.includes(extensionName)) {
+      metadata.extensions.push(extensionName);
+    }
+  }
+
+  for (const match of normalized.matchAll(/CREATE\s+TYPE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+AS\s+ENUM\s*\(([\s\S]*?)\);/gi)) {
+    metadata.enumTypes.push({
+      name: normalizeIdentifier(match[1]),
+      values: splitSqlDefinitions(match[2]).map((value) => value.trim().replace(/^'/, "").replace(/'$/, "")),
+    });
+  }
 
   for (const match of tableMatches) {
     const [, tableName, body] = match;
@@ -76,6 +148,10 @@ export function parseSqlDump(sql: string): ImportableSchema {
       .map((definition) => definition.trim())
       .filter(Boolean)
       .flatMap((definition) => {
+        const constraintNameMatch = definition.match(/^CONSTRAINT\s+["`]?([a-zA-Z0-9_]+)["`]?\s+([\s\S]*)$/i);
+        const constraintName = constraintNameMatch?.[1];
+        const normalizedDefinition = (constraintNameMatch?.[2] ?? definition).trim();
+
         if (/^PRIMARY\s+KEY/i.test(definition)) {
           const pkMatch = definition.match(/\((.*?)\)/);
           if (pkMatch?.[1]) {
@@ -88,13 +164,49 @@ export function parseSqlDump(sql: string): ImportableSchema {
           return [];
         }
 
-        const colMatch = definition.match(/^["`]?([a-zA-Z0-9_]+)["`]?\s+([a-zA-Z0-9_(),]+)([\s\S]*)$/i);
+        if (/^(?:CONSTRAINT\s+["`]?([a-zA-Z0-9_]+)["`]?\s+)?FOREIGN\s+KEY/i.test(definition)) {
+          const fkMatch = normalizedDefinition.match(
+            /^FOREIGN\s+KEY\s*\(\s*["`]?([a-zA-Z0-9_]+)["`]?\s*\)\s+REFERENCES\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(\s*["`]?([a-zA-Z0-9_]+)["`]?\s*\)([\s\S]*)$/i,
+          );
+          if (fkMatch) {
+            const [, sourceColumn, targetTable, targetColumn, tail = ""] = fkMatch;
+            const deleteMatch = tail.match(/ON\s+DELETE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION|SET DEFAULT)/i);
+            const updateMatch = tail.match(/ON\s+UPDATE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION|SET DEFAULT)/i);
+            addRelationship(relationships, {
+              sourceTable: tableName,
+              sourceColumn: normalizeIdentifier(sourceColumn),
+              targetTable: normalizeIdentifier(targetTable),
+              targetColumn: normalizeIdentifier(targetColumn),
+              on_delete: deleteMatch?.[1]?.toUpperCase() ?? "NO ACTION",
+              on_update: updateMatch?.[1]?.toUpperCase() ?? "NO ACTION",
+            });
+          }
+          return [];
+        }
+
+        if (/^(?:CONSTRAINT\s+["`]?([a-zA-Z0-9_]+)["`]?\s+)?CHECK/i.test(definition)) {
+          const checkMatch = normalizedDefinition.match(/^CHECK\s*\(([\s\S]*)\)$/i);
+          if (checkMatch?.[1]) {
+            metadata.checks.push({
+              tableName,
+              expression: checkMatch[1].trim(),
+              name: constraintName,
+            });
+          }
+          return [];
+        }
+
+        const colMatch = normalizedDefinition.match(/^["`]?([a-zA-Z0-9_]+)["`]?\s+([\s\S]+)$/i);
         if (!colMatch) {
           return [];
         }
 
-        const [, columnName, dataType, remainder] = colMatch;
+        const [, rawColumnName, columnRemainder] = colMatch;
+        const columnName = normalizeIdentifier(rawColumnName);
+        const dataType = extractDataType(columnRemainder);
+        const remainder = columnRemainder.slice(dataType.length).trim();
         const tail = remainder.toUpperCase();
+        const defaultValue = extractConstraintClause(remainder, "DEFAULT");
 
         const inlineReferenceMatch = remainder.match(
           /REFERENCES\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(\s*["`]?([a-zA-Z0-9_]+)["`]?\s*\)/i,
@@ -103,15 +215,23 @@ export function parseSqlDump(sql: string): ImportableSchema {
           const [, targetTable, targetColumn] = inlineReferenceMatch;
           const deleteMatch = remainder.match(/ON\s+DELETE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION|SET DEFAULT)/i);
           const updateMatch = remainder.match(/ON\s+UPDATE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION|SET DEFAULT)/i);
-          relationships.push({
+          addRelationship(relationships, {
             sourceTable: tableName,
             sourceColumn: columnName,
-            targetTable,
-            targetColumn,
+            targetTable: normalizeIdentifier(targetTable),
+            targetColumn: normalizeIdentifier(targetColumn),
             on_delete: deleteMatch?.[1]?.toUpperCase() ?? "NO ACTION",
-            on_update: updateMatch?.[1]?.toUpperCase() ?? "CASCADE",
+            on_update: updateMatch?.[1]?.toUpperCase() ?? "NO ACTION",
           });
         }
+
+        parseCheckExpressions(remainder).forEach((expression) => {
+          metadata.checks.push({
+            tableName,
+            columnName,
+            expression,
+          });
+        });
 
         return [{
           name: columnName,
@@ -119,7 +239,7 @@ export function parseSqlDump(sql: string): ImportableSchema {
           is_nullable: !tail.includes("NOT NULL"),
           is_primary: tail.includes("PRIMARY KEY"),
           is_unique: tail.includes("UNIQUE"),
-          default_value: null,
+          default_value: defaultValue,
         }];
       })
       .map((column) => ({
@@ -132,47 +252,31 @@ export function parseSqlDump(sql: string): ImportableSchema {
     tables.push({ name: tableName, columns });
   }
 
-  const fkMatches = [...normalized.matchAll(/ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+ADD\s+CONSTRAINT\s+["`]?.*?["`]?\s+FOREIGN\s+KEY\s*\(["`]?([a-zA-Z0-9_]+)["`]?\)\s+REFERENCES\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(["`]?([a-zA-Z0-9_]+)["`]?\)\s+ON\s+DELETE\s+([A-Z ]+)\s+ON\s+UPDATE\s+([A-Z ]+)/gi)];
+  const fkMatches = [...normalized.matchAll(/ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+ADD\s+CONSTRAINT\s+["`]?.*?["`]?\s+FOREIGN\s+KEY\s*\(["`]?([a-zA-Z0-9_]+)["`]?\)\s+REFERENCES\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(["`]?([a-zA-Z0-9_]+)["`]?\)([\s\S]*?);/gi)];
   for (const match of fkMatches) {
-    relationships.push({
-      sourceTable: match[1],
-      sourceColumn: match[2],
-      targetTable: match[3],
-      targetColumn: match[4],
-      on_delete: match[5].trim(),
-      on_update: match[6].trim(),
-    });
-  }
-
-  const tableConstraintMatches = [...normalized.matchAll(
-    /(?:CONSTRAINT\s+["`]?([a-zA-Z0-9_]+)["`]?\s+)?FOREIGN\s+KEY\s*\(\s*["`]?([a-zA-Z0-9_]+)["`]?\s*\)\s+REFERENCES\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(\s*["`]?([a-zA-Z0-9_]+)["`]?\s*\)([\s\S]*?)(?:,|$)/gi,
-  )];
-  for (const match of tableConstraintMatches) {
-    const sourceColumn = match[2];
-    const targetTable = match[3];
-    const targetColumn = match[4];
     const tail = match[5] ?? "";
-
-    const sourceTableMatch = tableMatches.find(([, , body]) =>
-      body.includes(match[0]),
-    );
-    const sourceTable = sourceTableMatch?.[1];
-    if (!sourceTable) continue;
-
     const deleteMatch = tail.match(/ON\s+DELETE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION|SET DEFAULT)/i);
     const updateMatch = tail.match(/ON\s+UPDATE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION|SET DEFAULT)/i);
-
-    relationships.push({
-      sourceTable,
-      sourceColumn,
-      targetTable,
-      targetColumn,
+    addRelationship(relationships, {
+      sourceTable: normalizeIdentifier(match[1]),
+      sourceColumn: normalizeIdentifier(match[2]),
+      targetTable: normalizeIdentifier(match[3]),
+      targetColumn: normalizeIdentifier(match[4]),
       on_delete: deleteMatch?.[1]?.toUpperCase() ?? "NO ACTION",
-      on_update: updateMatch?.[1]?.toUpperCase() ?? "CASCADE",
+      on_update: updateMatch?.[1]?.toUpperCase() ?? "NO ACTION",
     });
   }
 
-  return { tables, relationships };
+  for (const match of normalized.matchAll(/CREATE\s+(UNIQUE\s+)?INDEX\s+["`]?([a-zA-Z0-9_]+)["`]?\s+ON\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(([\s\S]*?)\);/gi)) {
+    metadata.indexes.push({
+      tableName: normalizeIdentifier(match[3]),
+      name: normalizeIdentifier(match[2]),
+      isUnique: Boolean(match[1]),
+      columns: parseIndexColumns(match[4]),
+    });
+  }
+
+  return { tables, relationships, metadata };
 }
 
 // ─── Template preview helpers ─────────────────────────────────────────────────

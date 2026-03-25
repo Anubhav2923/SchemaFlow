@@ -70,8 +70,16 @@ export async function createRelationship(
     `
       SELECT
         c.id,
+        c.name,
+        c.data_type,
+        c.is_primary,
         c.table_id,
-        t.project_id
+        t.project_id,
+        (
+          SELECT COUNT(*)
+          FROM columns table_columns
+          WHERE table_columns.table_id = c.table_id
+        )::int AS table_column_count
       FROM columns c
       JOIN tables t ON t.id = c.table_id
       WHERE c.id = ANY($1::uuid[]);
@@ -100,6 +108,25 @@ export async function createRelationship(
   if (sourceColumn.project_id !== targetColumn.project_id) {
     return reply.status(400).send({
       message: "Relationships can only be created within the same project",
+    });
+  }
+
+  if (sourceColumn.data_type?.trim().toLowerCase() !== targetColumn.data_type?.trim().toLowerCase()) {
+    return reply.status(400).send({
+      message: "Relationships must connect columns with matching data types",
+    });
+  }
+
+  if (
+    sourceColumn.is_primary &&
+    targetColumn.is_primary &&
+    sourceColumn.name?.toLowerCase() === "id" &&
+    targetColumn.name?.toLowerCase() === "id" &&
+    sourceTableId !== targetTableId &&
+    Number(sourceColumn.table_column_count ?? 0) > 1
+  ) {
+    return reply.status(400).send({
+      message: "Primary-key-to-primary-key relationships are blocked by default. Use a dedicated foreign key column such as customer_id or product_id.",
     });
   }
 

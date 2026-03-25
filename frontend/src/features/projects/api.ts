@@ -27,6 +27,7 @@ export type UpdateProjectPayload = {
   database_type?: string;
   is_favorite?: boolean;
   is_archived?: boolean;
+  schema_metadata?: unknown;
 };
 
 export async function fetchProjects() {

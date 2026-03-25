@@ -17,7 +17,7 @@ function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1", 
         type="target"
         position={Position.Left}
         id={`${column.id}-left`}
-        className={`!h-[8px] !w-[8px] !border-[1.5px] !transition-all hover:!scale-150 ${
+        className={`!h-[8px] !w-[8px] !border-[1.5px] hover:!scale-150 ${
           tableSelected ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
         } ${
           isDark ? "!border-slate-900" : "!border-white"
@@ -26,8 +26,8 @@ function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1", 
       />
 
       <div
-        className={`flex items-center justify-between gap-8 px-4 py-2 group/row transition-colors border-b last:border-none ${
-          isDark ? "border-slate-800/60 hover:bg-slate-800/30" : "border-slate-100 hover:bg-slate-50"
+        className={`flex items-center justify-between gap-8 px-4 py-2 group/row border-b last:border-none ${
+          isDark ? "border-slate-800/70 hover:bg-slate-800/20" : "border-slate-200/85 hover:bg-slate-50/80"
         }`}
       >
         <div className="flex items-center gap-2.5 min-w-0">
@@ -41,12 +41,12 @@ function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1", 
             )}
           </div>
 
-          <span className={`truncate text-[13px] font-medium tracking-wide select-none ${isDark ? "text-slate-200" : "text-slate-700"}`}>
+          <span className={`truncate text-[14px] font-medium tracking-[0.01em] select-none ${isDark ? "text-slate-100" : "text-slate-800"}`}>
             {column.name}
           </span>
         </div>
 
-        <span className={`text-[12px] font-normal tracking-wide shrink-0 select-none ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+        <span className={`text-[12px] font-medium tracking-[0.01em] shrink-0 select-none ${isDark ? "text-slate-300" : "text-slate-600"}`}>
           {column.data_type.split('(')[0]}
         </span>
       </div>
@@ -56,7 +56,7 @@ function ColumnItemComponent({ column, isDark = false, accentColor = "#6366f1", 
         type="source"
         position={Position.Right}
         id={`${column.id}-right`}
-        className={`!h-[8px] !w-[8px] !border-[1.5px] !transition-all hover:!scale-150 ${
+        className={`!h-[8px] !w-[8px] !border-[1.5px] hover:!scale-150 ${
           tableSelected ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
         } ${
           isDark ? "!border-slate-900" : "!border-white"

@@ -75,10 +75,38 @@ export const EXPORT_FORMATS: Array<{ value: ExportFormat; label: string }> = [
 export const DATABASE_OPTIONS = ["postgresql", "mongodb", "mysql", "sqlserver"] as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+export type ImportableEnumType = {
+  name: string;
+  values: string[];
+};
+
+export type ImportableCheckConstraint = {
+  tableName: string;
+  expression: string;
+  name?: string;
+  columnName?: string;
+};
+
+export type ImportableIndex = {
+  tableName: string;
+  columns: string[];
+  name?: string;
+  isUnique?: boolean;
+};
+
+export type ImportableSchemaMetadata = {
+  dialect?: string;
+  extensions?: string[];
+  enumTypes?: ImportableEnumType[];
+  checks?: ImportableCheckConstraint[];
+  indexes?: ImportableIndex[];
+};
+
 export type ImportableSchema = {
   summary?: string;
   tables: AiGeneratedTable[];
   relationships: AiGeneratedRelationship[];
+  metadata?: ImportableSchemaMetadata;
 };
 
 export type PreviewSchemaData = {

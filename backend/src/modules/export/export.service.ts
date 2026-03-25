@@ -13,6 +13,7 @@ type ProjectRow = {
   id: string;
   name: string;
   database_type: string;
+  schema_metadata: unknown;
 };
 
 export type TableRow = {
@@ -46,6 +47,33 @@ export type RelationshipRow = {
   on_update: string;
 };
 
+type SchemaEnumType = {
+  name: string;
+  values: string[];
+};
+
+type SchemaCheckConstraint = {
+  tableName: string;
+  expression: string;
+  name?: string;
+  columnName?: string;
+};
+
+type SchemaIndex = {
+  tableName: string;
+  columns: string[];
+  name?: string;
+  isUnique?: boolean;
+};
+
+type SchemaMetadata = {
+  dialect?: string;
+  extensions: string[];
+  enumTypes: SchemaEnumType[];
+  checks: SchemaCheckConstraint[];
+  indexes: SchemaIndex[];
+};
+
 export type ProjectSchemaData = {
   project: ProjectRow;
   tables: TableRow[];
@@ -53,6 +81,7 @@ export type ProjectSchemaData = {
   relationships: RelationshipRow[];
   columnsByTable: Map<string, ColumnRow[]>;
   relationshipRefs: Map<string, string>;
+  metadata: SchemaMetadata;
 };
 
 export type ExportResult = {
@@ -85,6 +114,29 @@ function camelCase(value: string) {
       index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1),
     )
     .join("");
+}
+
+function normalizeSchemaMetadata(input: unknown): SchemaMetadata {
+  const base: SchemaMetadata = {
+    dialect: "postgresql",
+    extensions: [],
+    enumTypes: [],
+    checks: [],
+    indexes: [],
+  };
+
+  if (!input || typeof input !== "object") {
+    return base;
+  }
+
+  const metadata = input as Partial<SchemaMetadata>;
+  return {
+    dialect: typeof metadata.dialect === "string" ? metadata.dialect : base.dialect,
+    extensions: Array.isArray(metadata.extensions) ? metadata.extensions.filter((value): value is string => typeof value === "string") : base.extensions,
+    enumTypes: Array.isArray(metadata.enumTypes) ? metadata.enumTypes.filter((value): value is SchemaEnumType => Boolean(value) && typeof value.name === "string" && Array.isArray(value.values)) : base.enumTypes,
+    checks: Array.isArray(metadata.checks) ? metadata.checks.filter((value): value is SchemaCheckConstraint => Boolean(value) && typeof value.tableName === "string" && typeof value.expression === "string") : base.checks,
+    indexes: Array.isArray(metadata.indexes) ? metadata.indexes.filter((value): value is SchemaIndex => Boolean(value) && typeof value.tableName === "string" && Array.isArray(value.columns)) : base.indexes,
+  };
 }
 
 function mapMongoType(dataType: string) {
@@ -247,7 +299,7 @@ export async function loadProjectSchema(
 ): Promise<ProjectSchemaData> {
   const projectRes = await app.db.query<ProjectRow>(
     `
-      SELECT id, name, database_type
+      SELECT id, name, database_type, schema_metadata
       FROM projects
       WHERE id = $1;
     `,
@@ -332,6 +384,90 @@ export async function loadProjectSchema(
     relationships: relationshipsRes.rows,
     columnsByTable,
     relationshipRefs,
+    metadata: normalizeSchemaMetadata(project.schema_metadata),
+  };
+}
+
+function buildColumnLookup(schema: ProjectSchemaData) {
+  const byTableAndColumn = new Map<string, ColumnRow>();
+  for (const table of schema.tables) {
+    const columns = schema.columnsByTable.get(table.id) ?? [];
+    for (const column of columns) {
+      byTableAndColumn.set(`${table.name}.${column.name}`, column);
+    }
+  }
+  return byTableAndColumn;
+}
+
+function isSuspiciousRelationship(
+  schema: ProjectSchemaData,
+  relationship: RelationshipRow,
+  columnLookup: Map<string, ColumnRow>,
+) {
+  const sourceColumn = columnLookup.get(`${relationship.source_table_name}.${relationship.source_column_name}`);
+  const targetColumn = columnLookup.get(`${relationship.target_table_name}.${relationship.target_column_name}`);
+  if (!sourceColumn || !targetColumn) {
+    return true;
+  }
+
+  if (sourceColumn.data_type.trim().toLowerCase() !== targetColumn.data_type.trim().toLowerCase()) {
+    return true;
+  }
+
+  if (
+    sourceColumn.is_primary &&
+    targetColumn.is_primary &&
+    relationship.source_column_name.toLowerCase() === "id" &&
+    relationship.target_column_name.toLowerCase() === "id" &&
+    relationship.source_table_name !== relationship.target_table_name
+  ) {
+    return true;
+  }
+
+  const sourceTable = schema.tables.find((table) => table.id === relationship.source_table_id);
+  const sourceColumns = sourceTable ? (schema.columnsByTable.get(sourceTable.id) ?? []) : [];
+  if (
+    sourceColumn.is_primary &&
+    targetColumn.is_primary &&
+    sourceColumns.length > 1
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeRelationships(schema: ProjectSchemaData) {
+  const columnLookup = buildColumnLookup(schema);
+  return schema.relationships.filter((relationship) => !isSuspiciousRelationship(schema, relationship, columnLookup));
+}
+
+function formatSqlReferentialAction(keyword: "DELETE" | "UPDATE", action: string) {
+  const normalized = action.trim().toUpperCase();
+  if (!normalized || normalized === "NO ACTION") {
+    return null;
+  }
+
+  return `ON ${keyword} ${normalized}`;
+}
+
+function parseNumericCheck(expression: string, columnName: string) {
+  const escapedColumn = columnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = expression.match(new RegExp(`^${escapedColumn}\\s*(>=|>)\\s*(-?\\d+(?:\\.\\d+)?)$`, "i"));
+  if (!match) {
+    return null;
+  }
+
+  const [, operator, rawValue] = match;
+  const value = Number(rawValue);
+  if (Number.isNaN(value)) {
+    return null;
+  }
+
+  return {
+    operator,
+    value,
+    min: operator === ">" ? value + 1 : value,
   };
 }
 
@@ -345,8 +481,12 @@ function buildSqlExport(schema: ProjectSchemaData): ExportResult {
     };
   }
 
-  const createStatements = schema.tables.map((table) => {
+  const createStatements = schema.tables.flatMap((table) => {
     const columns = schema.columnsByTable.get(table.id) ?? [];
+    if (columns.length === 0) {
+      return [`-- Skipped empty table ${escapeIdentifier(table.name)} because it has no columns.`];
+    }
+
     const definitions = columns.map((column) => {
       let line = `${escapeIdentifier(column.name)} ${column.data_type}`;
 
@@ -373,14 +513,22 @@ function buildSqlExport(schema: ProjectSchemaData): ExportResult {
       definitions.push(`PRIMARY KEY (${primaryKeys.join(", ")})`);
     }
 
-    return [
+    const checks = schema.metadata.checks
+      .filter((check) => check.tableName === table.name)
+      .map((check) => check.name
+        ? `CONSTRAINT ${escapeIdentifier(check.name)} CHECK (${check.expression})`
+        : `CHECK (${check.expression})`);
+
+    definitions.push(...checks);
+
+    return [[
       `CREATE TABLE ${escapeIdentifier(table.name)} (`,
       `  ${definitions.join(",\n  ")}`,
       ");",
-    ].join("\n");
+    ].join("\n")];
   });
 
-  const relationshipStatements = schema.relationships.map((relationship) => {
+  const relationshipStatements = normalizeRelationships(schema).map((relationship) => {
     const constraintName = [
       "fk",
       relationship.source_table_name,
@@ -389,58 +537,115 @@ function buildSqlExport(schema: ProjectSchemaData): ExportResult {
       relationship.target_column_name,
     ].join("_");
 
-    return [
+    const clauses = [
       `ALTER TABLE ${escapeIdentifier(relationship.source_table_name)}`,
       `ADD CONSTRAINT ${escapeIdentifier(constraintName)}`,
       `FOREIGN KEY (${escapeIdentifier(relationship.source_column_name)})`,
       `REFERENCES ${escapeIdentifier(relationship.target_table_name)} (${escapeIdentifier(relationship.target_column_name)})`,
-      `ON DELETE ${relationship.on_delete} ON UPDATE ${relationship.on_update};`,
-    ].join(" ");
+      formatSqlReferentialAction("DELETE", relationship.on_delete),
+      formatSqlReferentialAction("UPDATE", relationship.on_update),
+    ].filter(Boolean);
+
+    return `${clauses.join(" ")};`;
   });
+
+  const extensionStatements = schema.metadata.extensions.map((extension) =>
+    `CREATE EXTENSION IF NOT EXISTS ${escapeIdentifier(extension)};`,
+  );
+  const enumStatements = schema.metadata.enumTypes.map((enumType) =>
+    `CREATE TYPE ${escapeIdentifier(enumType.name)} AS ENUM (${enumType.values.map((value) => `'${value.replace(/'/g, "''")}'`).join(", ")});`,
+  );
+  const indexStatements = schema.metadata.indexes
+    .filter((index) => index.columns.length > 0)
+    .map((index) => [
+      "CREATE",
+      index.isUnique ? "UNIQUE" : null,
+      "INDEX",
+      index.name ? escapeIdentifier(index.name) : null,
+      "ON",
+      escapeIdentifier(index.tableName),
+      `(${index.columns.map((column) => escapeIdentifier(column)).join(", ")})`,
+      ";",
+    ].filter(Boolean).join(" "));
 
   return {
     format: "postgresql",
     language: "sql",
     filename: formatFilename(schema.project.name, "sql"),
-    code: [...createStatements, ...relationshipStatements].join("\n\n"),
+    code: [...extensionStatements, ...enumStatements, ...createStatements, ...relationshipStatements, ...indexStatements].join("\n\n"),
   };
 }
 
 function buildMongooseExport(schema: ProjectSchemaData): ExportResult {
-  const models = schema.tables.map((table) => {
-    const schemaName = pascalCase(table.name) || "Diagram";
-    const fields = (schema.columnsByTable.get(table.id) ?? []).map((column) => {
-      const pieces = [`type: ${mapMongoType(column.data_type)}`];
+  const relationshipRefs = new Map<string, string>();
+  for (const relationship of normalizeRelationships(schema)) {
+    relationshipRefs.set(
+      `${relationship.source_table_name}.${relationship.source_column_name}`,
+      relationship.target_table_name,
+    );
+  }
 
-      if (!column.is_nullable || column.is_primary) {
-        pieces.push("required: true");
-      }
+  const models = schema.tables
+    .filter((table) => (schema.columnsByTable.get(table.id) ?? []).length > 0)
+    .map((table) => {
+      const schemaName = pascalCase(table.name) || "Diagram";
+      const tableIndexes = schema.metadata.indexes.filter((index) => index.tableName === table.name);
+      const tableChecks = schema.metadata.checks.filter((check) => check.tableName === table.name);
+      const fields = (schema.columnsByTable.get(table.id) ?? []).map((column) => {
+        const pieces = [`type: ${mapMongoType(column.data_type)}`];
+        const enumType = schema.metadata.enumTypes.find((item) => item.name === column.data_type);
 
-      if (column.is_unique) {
-        pieces.push("unique: true");
-      }
+        if (!column.is_nullable || column.is_primary) {
+          pieces.push("required: true");
+        }
 
-      const defaultValue = formatMongoDefault(column.default_value);
-      if (defaultValue) {
-        pieces.push(`default: ${defaultValue}`);
-      }
+        if (column.is_unique) {
+          pieces.push("unique: true");
+        }
 
-      const ref = schema.relationshipRefs.get(`${table.name}.${column.name}`);
-      if (ref) {
-        pieces.push(`ref: "${pascalCase(ref) || ref}"`);
-      }
+        if (enumType?.values.length) {
+          pieces.push(`enum: [${enumType.values.map((value) => JSON.stringify(value)).join(", ")}]`);
+        }
 
-      return `  ${column.name}: { ${pieces.join(", ")} }`;
+        const defaultValue = formatMongoDefault(column.default_value);
+        if (defaultValue) {
+          pieces.push(`default: ${defaultValue}`);
+        }
+
+        const ref = relationshipRefs.get(`${table.name}.${column.name}`);
+        if (ref) {
+          pieces.push(`ref: "${pascalCase(ref) || ref}"`);
+        }
+
+        const numericCheck = tableChecks
+          .filter((check) => check.columnName === column.name)
+          .reduce<ReturnType<typeof parseNumericCheck>>((found, check) => {
+            if (found) {
+              return found;
+            }
+            return parseNumericCheck(check.expression, column.name);
+          }, null);
+        if (numericCheck) {
+          pieces.push(`min: ${numericCheck.min}`);
+        }
+
+        return `  ${column.name}: { ${pieces.join(", ")} }`;
+      });
+
+      const indexLines = tableIndexes
+        .filter((index) => index.columns.length > 0)
+        .map((index) => `${schemaName}Schema.index({ ${index.columns.map((column) => `${camelCase(column) || column}: 1`).join(", ")} }, {${index.isUnique ? " unique: true" : ""} });`);
+
+      return [
+        `const ${schemaName}Schema = new mongoose.Schema({`,
+        fields.length > 0 ? fields.join(",\n") : "  // No columns defined yet",
+        `}, { timestamps: true });`,
+        "",
+        ...indexLines,
+        ...(indexLines.length > 0 ? [""] : []),
+        `export const ${schemaName} = mongoose.model("${schemaName}", ${schemaName}Schema);`,
+      ].join("\n");
     });
-
-    return [
-      `const ${schemaName}Schema = new mongoose.Schema({`,
-      fields.length > 0 ? fields.join(",\n") : "  // No columns defined yet",
-      `}, { timestamps: true });`,
-      "",
-      `export const ${schemaName} = mongoose.model("${schemaName}", ${schemaName}Schema);`,
-    ].join("\n");
-  });
 
   return {
     format: "mongoose",
@@ -456,7 +661,7 @@ function buildMongooseExport(schema: ProjectSchemaData): ExportResult {
 
 function buildPrismaExport(schema: ProjectSchemaData): ExportResult {
   const relationMap = new Map<string, RelationshipRow[]>();
-  for (const relationship of schema.relationships) {
+  for (const relationship of normalizeRelationships(schema)) {
     const existing = relationMap.get(relationship.source_table_id) ?? [];
     existing.push(relationship);
     relationMap.set(relationship.source_table_id, existing);

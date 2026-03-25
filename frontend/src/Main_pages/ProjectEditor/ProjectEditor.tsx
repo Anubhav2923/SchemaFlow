@@ -41,7 +41,7 @@ import {
   downloadTextFile, parseSqlDump, buildTemplatePreviewSchema,
   computeTemplatePreviewPositions,
 } from "./utils";
-import type { TemplatePreviewLayout } from "./constants";
+import type { ImportableSchema, TemplatePreviewLayout } from "./constants";
 
 const EMPTY_GROUPS: SchemaGroup[] = [];
 
@@ -186,7 +186,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   }, []);
 
   const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["schema", resolvedProjectId] });
+    void queryClient.refetchQueries({ queryKey: ["schema", resolvedProjectId], type: "active" });
   }, [queryClient, resolvedProjectId]);
 
   const ensureAuth = useCallback(async () => {
@@ -309,10 +309,29 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     onSuccess: (newTable) => {
       setTableName("");
       const nextPos = getNextTablePosition();
+      if (resolvedProjectId) {
+        queryClient.setQueryData(["schema", resolvedProjectId], (current: { tables: SchemaTable[]; columns: SchemaColumn[]; relationships: SchemaRelationship[]; groups: SchemaGroup[] } | undefined) => {
+          if (!current) return current;
+          const alreadyPresent = current.tables.some((table) => table.id === newTable.id);
+          if (alreadyPresent) return current;
+          return {
+            ...current,
+            tables: [
+              ...current.tables,
+              {
+                ...newTable,
+                x: nextPos.x,
+                y: nextPos.y,
+                group_id: newTable.group_id ?? null,
+              },
+            ],
+          };
+        });
+      }
       setPersistedPositions({ [newTable.id]: nextPos });
       persistTablePosition(newTable.id, nextPos, false);
       selectedNodeIdsRef.current = newTable.id;
-      setFlowNodes(nds => nds.map(n => ({ ...n, selected: false })));
+      setFlowNodes(nds => nds.map(n => ({ ...n, selected: n.id === newTable.id })));
       setExpandedTableId(newTable.id);
       selectNode(newTable.id);
       reactFlowInstance?.setCenter(nextPos.x + 160, nextPos.y + 90, { zoom: 1.0, duration: 350 });
@@ -483,7 +502,21 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
 
     // Compute a schema-data fingerprint (IDs + names only — no functions)
     const fingerprint =
-      computedNodes.map(n => `${n.id}:${n.type}:${String(n.data?.name)}`).join("|") +
+      computedNodes.map((n) => {
+        if (n.type === "tableNode") {
+          const tableData = n.data as { name?: string; columns?: Array<{ id: string; name: string; data_type: string }> } | undefined;
+          const columnFingerprint = (tableData?.columns ?? [])
+            .map((column) => `${column.id}:${column.name}:${column.data_type}`)
+            .join(",");
+          return `${n.id}:${n.type}:${String(tableData?.name ?? "")}:${columnFingerprint}`;
+        }
+
+        if (n.type === "groupNode") {
+          return `${n.id}:${n.type}:${String(n.data?.name ?? "")}:${n.position.x}:${n.position.y}:${String(n.style?.width ?? "")}:${String(n.style?.height ?? "")}`;
+        }
+
+        return `${n.id}:${n.type}:${String(n.data?.name ?? "")}`;
+      }).join("|") +
       "|" +
       edges.map(e => `${e.id}:${e.source}:${e.target}`).join("|");
 
@@ -741,7 +774,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   }, [isTemplatePreviewMode, persistTablePosition, positions, relationships, setPersistedPositions, tables, templatePreviewData]);
 
   const applyImportedSchema = useCallback(async (
-    schema: { summary?: string; tables: { name: string; columns: { name: string; data_type: string; is_nullable?: boolean; is_primary?: boolean; is_unique?: boolean; default_value?: string | null }[] }[]; relationships: { sourceTable: string; sourceColumn: string; targetTable: string; targetColumn: string; on_delete?: string; on_update?: string }[] },
+    schema: ImportableSchema,
     importedLayout?: TemplatePreviewLayout,
   ) => {
     if (!resolvedProjectId) return;
@@ -767,8 +800,9 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       const sti = createdTables.get(rel.sourceTable); const tti = createdTables.get(rel.targetTable);
       const sci = createdColumns.get(`${rel.sourceTable}.${rel.sourceColumn}`); const tci = createdColumns.get(`${rel.targetTable}.${rel.targetColumn}`);
       if (!sti || !tti || !sci || !tci) continue;
-      await createRelationship({ source_table_id: sti, source_column_id: sci, target_table_id: tti, target_column_id: tci, on_delete: rel.on_delete ?? "CASCADE", on_update: rel.on_update ?? "CASCADE" });
+      await createRelationship({ source_table_id: sti, source_column_id: sci, target_table_id: tti, target_column_id: tci, on_delete: rel.on_delete ?? "NO ACTION", on_update: rel.on_update ?? "NO ACTION" });
     }
+    await updateProject(resolvedProjectId, { schema_metadata: schema.metadata ?? {} });
     if (Object.keys(nextPositions).length > 0) {
       setPersistedPositions(nextPositions);
     }
@@ -923,12 +957,13 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); (document.getElementById("schema-search") as HTMLInputElement | null)?.focus(); }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") { e.preventDefault(); handleFitView(); }
       if (isTyping) return;
+      if (e.key === "Escape") { e.preventDefault(); clearCanvasSelection(); return; }
       if (e.key.toLowerCase() === "t") { e.preventDefault(); (document.getElementById("new-table-input") as HTMLInputElement | null)?.focus(); }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedCanvasNode) { e.preventDefault(); void handleDeleteSelectedNode(); }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleDeleteSelectedNode, handleFitView, selectedCanvasNode]);
+  }, [clearCanvasSelection, handleDeleteSelectedNode, handleFitView, selectedCanvasNode]);
 
   const onRcPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button === 2 && !isTemplatePreviewMode) {
@@ -1078,6 +1113,23 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
               </button>
             </div>
 
+            {!!selectedNodes.length && !isTemplatePreviewMode && (
+              <div className="pointer-events-none absolute top-5 right-5 z-20">
+                <button
+                  onClick={clearCanvasSelection}
+                  className={`pointer-events-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold tracking-wide shadow-sm transition active:scale-95 ${isDark ? "border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+                  title="Clear selection"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6L6 18" />
+                    <path d="M6 6l12 12" />
+                  </svg>
+                  Clear selection
+                  <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${isDark ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>Esc</span>
+                </button>
+              </div>
+            )}
+
             <ReactFlow
               onInit={setReactFlowInstance}
               onMove={(_e, vp) => { if (!Number.isNaN(vp.zoom)) setViewportZoom(vp.zoom); }}
@@ -1099,7 +1151,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
               snapToGrid snapGrid={[20, 20]}
               panOnDrag={[0, 1]} selectionOnDrag={true}
               selectionMode={SelectionMode.Partial} nodesDraggable nodesConnectable={!isTemplatePreviewMode}
-              elementsSelectable onlyRenderVisibleElements minZoom={0.05} maxZoom={4}
+              elementsSelectable minZoom={0.05} maxZoom={4}
               defaultViewport={{ x: 80, y: 80, zoom: 0.9 }}
               connectionLineStyle={{ stroke: "#818cf8", strokeWidth: 2 }}
               connectionLineType={"smoothstep" as never}

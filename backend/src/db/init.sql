@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS projects (
     owner_username TEXT NOT NULL DEFAULT 'user',
     slug TEXT NOT NULL DEFAULT '',
     database_type TEXT NOT NULL DEFAULT 'postgresql',
+    schema_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
     is_archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -22,6 +23,9 @@ ALTER TABLE projects
 
 ALTER TABLE projects
     ADD COLUMN IF NOT EXISTS database_type TEXT NOT NULL DEFAULT 'postgresql';
+
+ALTER TABLE projects
+    ADD COLUMN IF NOT EXISTS schema_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 ALTER TABLE projects
     ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN NOT NULL DEFAULT FALSE;

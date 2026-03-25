@@ -11,6 +11,7 @@ type UpdateProjectBody = {
   name?: string;
   description?: string | null;
   database_type?: string;
+  schema_metadata?: unknown;
   is_favorite?: boolean;
   is_archived?: boolean;
 };
@@ -32,6 +33,7 @@ type ProjectRow = {
   owner_username: string;
   slug: string;
   database_type: string;
+  schema_metadata: unknown;
   is_favorite: boolean;
   is_archived: boolean;
   created_at: string;
@@ -240,7 +242,7 @@ export async function updateProject(
   reply: FastifyReply,
 ) {
   const { id } = request.params as ProjectParams;
-  const { name, description, database_type, is_favorite, is_archived } =
+  const { name, description, database_type, schema_metadata, is_favorite, is_archived } =
     request.body as UpdateProjectBody;
   const userId = request.auth?.userId;
 
@@ -255,8 +257,9 @@ export async function updateProject(
         name = COALESCE($3, name),
         description = COALESCE($4, description),
         database_type = COALESCE($5, database_type),
-        is_favorite = COALESCE($6, is_favorite),
-        is_archived = COALESCE($7, is_archived),
+        schema_metadata = COALESCE($6::jsonb, schema_metadata),
+        is_favorite = COALESCE($7, is_favorite),
+        is_archived = COALESCE($8, is_archived),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND user_id = $2
       RETURNING *;
@@ -267,6 +270,7 @@ export async function updateProject(
       name?.trim() || null,
       description === undefined ? null : description?.trim() || null,
       database_type?.trim().toLowerCase() || null,
+      schema_metadata === undefined ? null : JSON.stringify(schema_metadata),
       typeof is_favorite === "boolean" ? is_favorite : null,
       typeof is_archived === "boolean" ? is_archived : null,
     ],
