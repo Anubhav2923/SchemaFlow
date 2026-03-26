@@ -36,8 +36,8 @@ export function Navbar({ theme, onToggle, fullWidth = false }: NavbarProps) {
       {/* ── Navigation Links Area ─────────────────────── */}
       {!fullWidth && (
         <div className="hidden md:flex items-center gap-8 text-[11px] font-bold tracking-[0.15em] text-slate-400">
-          <a href="/#features" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Features</a>
-          <a href="/#templates" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Templates</a>
+          <Link to="/" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Home</Link>
+          <Link to="/templates" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Templates</Link>
           <Link to="/docs" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Docs</Link>
         </div>
       )}
