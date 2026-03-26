@@ -45,6 +45,13 @@ import type { ImportableSchema, TemplatePreviewLayout } from "./constants";
 
 const EMPTY_GROUPS: SchemaGroup[] = [];
 
+type SchemaCacheData = {
+  tables: SchemaTable[];
+  columns: SchemaColumn[];
+  relationships: SchemaRelationship[];
+  groups: SchemaGroup[];
+};
+
 async function fetchSchema(projectId: string) {
   const tables = await fetchTables(projectId);
   const [cols, rels, grps] = await Promise.all([
@@ -142,6 +149,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
   const flowNodesRef = useRef<Node[]>([]);
   const selectedNodeIdRef = useRef(selectedNodeId);
   const selectedNodeIdsRef = useRef<string>("");
+  const schemaRefreshTimeoutRef = useRef<number | null>(null);
   useEffect(() => { selectedNodeIdRef.current = selectedNodeId; }, [selectedNodeId]);
 
   const tables = schemaQuery.data?.tables ?? EMPTY_TABLES;
@@ -185,9 +193,27 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     setSavedTemplateLayouts(layouts);
   }, []);
 
-  const invalidate = useCallback(() => {
-    void queryClient.refetchQueries({ queryKey: ["schema", resolvedProjectId], type: "active" });
+  const updateSchemaCache = useCallback((updater: (current: SchemaCacheData | undefined) => SchemaCacheData | undefined) => {
+    if (!resolvedProjectId) return;
+    queryClient.setQueryData(["schema", resolvedProjectId], updater);
   }, [queryClient, resolvedProjectId]);
+
+  const invalidate = useCallback((delayMs = 250) => {
+    if (!resolvedProjectId) return;
+    if (schemaRefreshTimeoutRef.current) {
+      window.clearTimeout(schemaRefreshTimeoutRef.current);
+    }
+    schemaRefreshTimeoutRef.current = window.setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: ["schema", resolvedProjectId] });
+      schemaRefreshTimeoutRef.current = null;
+    }, delayMs);
+  }, [queryClient, resolvedProjectId]);
+
+  useEffect(() => () => {
+    if (schemaRefreshTimeoutRef.current) {
+      window.clearTimeout(schemaRefreshTimeoutRef.current);
+    }
+  }, []);
 
   const ensureAuth = useCallback(async () => {
     if (!userId) { clerk.openSignIn(); return false; }
@@ -309,25 +335,23 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     onSuccess: (newTable) => {
       setTableName("");
       const nextPos = getNextTablePosition();
-      if (resolvedProjectId) {
-        queryClient.setQueryData(["schema", resolvedProjectId], (current: { tables: SchemaTable[]; columns: SchemaColumn[]; relationships: SchemaRelationship[]; groups: SchemaGroup[] } | undefined) => {
-          if (!current) return current;
-          const alreadyPresent = current.tables.some((table) => table.id === newTable.id);
-          if (alreadyPresent) return current;
-          return {
-            ...current,
-            tables: [
-              ...current.tables,
-              {
-                ...newTable,
-                x: nextPos.x,
-                y: nextPos.y,
-                group_id: newTable.group_id ?? null,
-              },
-            ],
-          };
-        });
-      }
+      updateSchemaCache((current) => {
+        if (!current) return current;
+        const alreadyPresent = current.tables.some((table) => table.id === newTable.id);
+        if (alreadyPresent) return current;
+        return {
+          ...current,
+          tables: [
+            ...current.tables,
+            {
+              ...newTable,
+              x: nextPos.x,
+              y: nextPos.y,
+              group_id: newTable.group_id ?? null,
+            },
+          ],
+        };
+      });
       setPersistedPositions({ [newTable.id]: nextPos });
       persistTablePosition(newTable.id, nextPos, false);
       selectedNodeIdsRef.current = newTable.id;
@@ -339,17 +363,55 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     },
     onError: (e) => alert(getSchemaApiErrorMessage(e)),
   });
-  const deleteTableMut = useMutation({ mutationFn: deleteTable, onSuccess: () => { setExpandedTableId(null); selectNode(null); invalidate(); }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
-  const renameTableMut = useMutation({ mutationFn: ({ id, name }: { id: string; name: string }) => updateTable(id, { name }), onSuccess: () => { setRenamingTableId(null); invalidate(); }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
-  const addColMut = useMutation({ mutationFn: createColumn, onSuccess: () => { setNewColName(""); setNewColType("varchar(255)"); setNewColPK(false); setNewColUnique(false); setNewColNotNull(false); setAddingColTableId(null); invalidate(); }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
-  const deleteColMut = useMutation({ mutationFn: deleteColumn, onSuccess: invalidate, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
-  const updateColMut = useMutation({ mutationFn: ({ id, ...body }: { id: string } & Partial<CreateColumnPayload>) => updateColumn(id, body), onSuccess: () => { setRenamingColId(null); invalidate(); }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
-  const createRelMut = useMutation({ mutationFn: createRelationship, onSuccess: () => { setConnectDialog(null); invalidate(); }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
-  const deleteRelMut = useMutation({ mutationFn: deleteRelationship, onSuccess: invalidate, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
+  const deleteTableMut = useMutation({ mutationFn: deleteTable, onSuccess: (_data, tableId) => {
+    setExpandedTableId(null);
+    selectNode(null);
+    setSelectedNodes([]);
+    updateSchemaCache((current) => current ? {
+      ...current,
+      tables: current.tables.filter((table) => table.id !== tableId),
+      columns: current.columns.filter((column) => column.table_id !== tableId),
+      relationships: current.relationships.filter((relationship) => relationship.source_table_id !== tableId && relationship.target_table_id !== tableId),
+    } : current);
+    setFlowNodes((nds) => nds.filter((node) => node.id !== tableId));
+    invalidate();
+  }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
+  const renameTableMut = useMutation({ mutationFn: ({ id, name }: { id: string; name: string }) => updateTable(id, { name }), onSuccess: (updatedTable) => {
+    setRenamingTableId(null);
+    updateSchemaCache((current) => current ? { ...current, tables: current.tables.map((table) => table.id === updatedTable.id ? updatedTable : table) } : current);
+    invalidate();
+  }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
+  const addColMut = useMutation({ mutationFn: createColumn, onSuccess: (newColumn) => {
+    setNewColName(""); setNewColType("varchar(255)"); setNewColPK(false); setNewColUnique(false); setNewColNotNull(false); setAddingColTableId(null);
+    updateSchemaCache((current) => current ? { ...current, columns: [...current.columns, newColumn] } : current);
+    invalidate();
+  }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
+  const deleteColMut = useMutation({ mutationFn: deleteColumn, onSuccess: (_data, colId) => {
+    updateSchemaCache((current) => current ? {
+      ...current,
+      columns: current.columns.filter((column) => column.id !== colId),
+      relationships: current.relationships.filter((relationship) => relationship.source_column_id !== colId && relationship.target_column_id !== colId),
+    } : current);
+    invalidate();
+  }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
+  const updateColMut = useMutation({ mutationFn: ({ id, ...body }: { id: string } & Partial<CreateColumnPayload>) => updateColumn(id, body), onSuccess: (updatedColumn) => {
+    setRenamingColId(null);
+    updateSchemaCache((current) => current ? { ...current, columns: current.columns.map((column) => column.id === updatedColumn.id ? updatedColumn : column) } : current);
+    invalidate();
+  }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
+  const createRelMut = useMutation({ mutationFn: createRelationship, onSuccess: (newRelationship) => {
+    setConnectDialog(null);
+    updateSchemaCache((current) => current ? { ...current, relationships: [...current.relationships, newRelationship] } : current);
+    invalidate();
+  }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
+  const deleteRelMut = useMutation({ mutationFn: deleteRelationship, onSuccess: (_data, relId) => {
+    updateSchemaCache((current) => current ? { ...current, relationships: current.relationships.filter((relationship) => relationship.id !== relId) } : current);
+    invalidate();
+  }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
   const updateRelMut = useMutation({ mutationFn: ({ id, ...payload }: { id: string } & Partial<SchemaRelationship>) => updateRelationship(id, payload), onSuccess: () => { setConnectDialog(null); invalidate(); }, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
-  const createGrpMut = useMutation({ mutationFn: createGroup, onSuccess: invalidate });
-  const updateGrpMut = useMutation({ mutationFn: ({ id, ...body }: { id: string } & Partial<SchemaGroup>) => updateGroup(id, body), onSuccess: invalidate });
-  const deleteGrpMut = useMutation({ mutationFn: deleteGroup, onSuccess: invalidate });
+  const createGrpMut = useMutation({ mutationFn: createGroup, onSuccess: () => { invalidate(); } });
+  const updateGrpMut = useMutation({ mutationFn: ({ id, ...body }: { id: string } & Partial<SchemaGroup>) => updateGroup(id, body), onSuccess: () => { invalidate(); } });
+  const deleteGrpMut = useMutation({ mutationFn: deleteGroup, onSuccess: () => { invalidate(); } });
   const updateTableLayoutMut = useMutation({ mutationFn: ({ id, ...body }: { id: string; group_id?: string | null; x?: number; y?: number }) => updateTable(id, body), onError: (e) => console.error(getSchemaApiErrorMessage(e)) });
   const aiGenerateMut = useMutation({ mutationFn: generateSchemaWithAi, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
   const aiOptimizeMut = useMutation({ mutationFn: optimizeSchemaWithAi, onError: (e) => alert(getSchemaApiErrorMessage(e)) });
@@ -773,6 +835,35 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
     setHasFitView(false);
   }, [isTemplatePreviewMode, persistTablePosition, positions, relationships, setPersistedPositions, tables, templatePreviewData]);
 
+  const clearExistingSchema = useCallback(async () => {
+    if (!resolvedProjectId) return;
+
+    const existingTableIds = tables.map((table) => table.id);
+    const existingGroupIds = groups.map((group) => group.id);
+
+    updateSchemaCache((current) => current ? {
+      ...current,
+      tables: [],
+      columns: [],
+      relationships: [],
+      groups: [],
+    } : current);
+    setFlowNodes([]);
+    setFlowEdges([]);
+    setSelectedNodes([]);
+    selectNode(null);
+    selectedNodeIdsRef.current = "";
+    setExpandedTableId(null);
+    setPersistedPositions({});
+
+    await Promise.allSettled([
+      ...existingTableIds.map((tableId) => deleteTable(tableId)),
+      ...existingGroupIds.map((groupId) => deleteGroup(groupId)),
+    ]);
+
+    invalidate(300);
+  }, [groups, invalidate, resolvedProjectId, selectNode, setExpandedTableId, setPersistedPositions, setSelectedNodes, tables, updateSchemaCache]);
+
   const applyImportedSchema = useCallback(async (
     schema: ImportableSchema,
     importedLayout?: TemplatePreviewLayout,
@@ -786,6 +877,17 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       const normalizedName = table.name.trim();
       const ct = await createTable({ name: normalizedName, project_id: resolvedProjectId }); createdTables.set(table.name, ct.id);
       const layoutPosition = importedLayout?.[normalizedName];
+      updateSchemaCache((current) => current ? {
+        ...current,
+        tables: current.tables.some((item) => item.id === ct.id)
+          ? current.tables
+          : [...current.tables, {
+            ...ct,
+            x: layoutPosition?.x ?? ct.x,
+            y: layoutPosition?.y ?? ct.y,
+            group_id: ct.group_id ?? null,
+          }],
+      } : current);
       if (layoutPosition) {
         nextPositions[ct.id] = { x: layoutPosition.x, y: layoutPosition.y };
         persistTablePosition(ct.id, { x: layoutPosition.x, y: layoutPosition.y }, false);
@@ -794,24 +896,36 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
         const col = table.columns[i];
         const cc = await createColumn({ name: col.name.trim(), data_type: col.data_type.trim(), table_id: ct.id, is_nullable: col.is_nullable ?? true, is_primary: col.is_primary ?? false, is_unique: col.is_unique ?? false, default_value: col.default_value ?? undefined, position: i });
         createdColumns.set(`${table.name}.${col.name}`, cc.id);
+        updateSchemaCache((current) => current ? {
+          ...current,
+          columns: current.columns.some((item) => item.id === cc.id) ? current.columns : [...current.columns, cc],
+        } : current);
       }
     }
     for (const rel of schema.relationships) {
       const sti = createdTables.get(rel.sourceTable); const tti = createdTables.get(rel.targetTable);
       const sci = createdColumns.get(`${rel.sourceTable}.${rel.sourceColumn}`); const tci = createdColumns.get(`${rel.targetTable}.${rel.targetColumn}`);
       if (!sti || !tti || !sci || !tci) continue;
-      await createRelationship({ source_table_id: sti, source_column_id: sci, target_table_id: tti, target_column_id: tci, on_delete: rel.on_delete ?? "NO ACTION", on_update: rel.on_update ?? "NO ACTION" });
+      const createdRelationship = await createRelationship({ source_table_id: sti, source_column_id: sci, target_table_id: tti, target_column_id: tci, on_delete: rel.on_delete ?? "NO ACTION", on_update: rel.on_update ?? "NO ACTION" });
+      updateSchemaCache((current) => current ? {
+        ...current,
+        relationships: current.relationships.some((item) => item.id === createdRelationship.id) ? current.relationships : [...current.relationships, createdRelationship],
+      } : current);
     }
     await updateProject(resolvedProjectId, { schema_metadata: schema.metadata ?? {} });
     if (Object.keys(nextPositions).length > 0) {
       setPersistedPositions(nextPositions);
     }
-    await queryClient.invalidateQueries({ queryKey: ["schema", resolvedProjectId] });
+    invalidate(400);
     setAiSummary(schema.summary ?? "Schema imported successfully.");
-  }, [ensureAuth, getToken, persistTablePosition, queryClient, resolvedProjectId, setAiSummary, setPersistedPositions]);
+  }, [ensureAuth, getToken, invalidate, persistTablePosition, resolvedProjectId, setAiSummary, setPersistedPositions, updateSchemaCache]);
 
   const handleApplyTemplate = useCallback(async (templateId: string) => {
     const t = TEMPLATE_SCHEMAS.find(i => i.id === templateId); if (!t) return;
+    const ok = await ensureAuth(); if (!ok) return;
+    setSelectedTemplateId(null);
+    setSidebarMode("schema");
+    await clearExistingSchema();
     const previewData = buildTemplatePreviewSchema(t.schema);
     const preferredLayout = savedTemplateLayouts[t.id] ?? {};
     const templateLayout = computeTemplatePreviewPositions(t, previewData, preferredLayout);
@@ -821,9 +935,7 @@ export default function ProjectEditorCore({ projectId = "", username = "", diagr
       return acc;
     }, {});
     await applyImportedSchema(t.schema, layoutByName);
-    setSelectedTemplateId(null);
-    setSidebarMode("schema");
-  }, [applyImportedSchema, savedTemplateLayouts, setSelectedTemplateId, setSidebarMode]);
+  }, [applyImportedSchema, clearExistingSchema, ensureAuth, savedTemplateLayouts, setSelectedTemplateId, setSidebarMode]);
 
   const handleImportSql = useCallback(async () => {
     const parsed = parseSqlDump(sqlImport);

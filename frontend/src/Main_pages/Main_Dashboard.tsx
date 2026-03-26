@@ -3,7 +3,7 @@ import { Navbar } from "../components/layout/Navbar";
 import { useTheme } from "../hooks/useTheme";
 import DashboardCore from "./Dashboard/Dashboard";
 import { GuestDashboard } from "./Dashboard/components/GuestDashboard";
-import { useCreateProject, useProjects } from "../features/projects/hooks";
+import { useCreateProject } from "../features/projects/hooks";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { slugify } from "./Dashboard/utils";
@@ -15,7 +15,6 @@ export default function MainDashboard() {
   const { theme, toggleTheme } = useTheme();
   
   // For the Guest View
-  const { data: projects = [] } = useProjects(null);
   const createProjectMutation = useCreateProject();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -55,7 +54,6 @@ export default function MainDashboard() {
       ) : (
         // ── Guest Marketing logic starts here ──
         <GuestDashboard
-          projectCount={projects.length}
           handleSubmit={handleGuestSubmit}
           name={name}
           setName={setName}

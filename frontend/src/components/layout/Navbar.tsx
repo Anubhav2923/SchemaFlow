@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
-import { Button } from "../ui/Button";
+import { motion } from "motion/react";
+import { Database, Sun, Moon } from "lucide-react";
 
 type Theme = "light" | "dark";
 
@@ -12,68 +13,74 @@ interface NavbarProps {
 
 export function Navbar({ theme, onToggle, fullWidth = false }: NavbarProps) {
   return (
-    <nav className={`sticky top-0 z-[60] w-full border-b transition-all duration-300 ${
-      theme === 'dark' 
-        ? "border-[#334155] bg-[#020617]/95 backdrop-blur-xl" 
-        : "border-[#e2e8f0] bg-white/95 backdrop-blur-xl"
-    }`}>
-      <div className={`flex h-16 items-stretch justify-between w-full px-8`}>
-        {/* Logo Container - Aligned with Sidebar */}
-        <div className={`flex items-center border-r border-transparent w-80 px-4 md:px-6`}>
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[linear-gradient(135deg,#6366f1,#4f46e5)] text-white shadow-lg transition-transform group-hover:scale-105 group-hover:rotate-3 shadow-indigo-500/30">
-              <span className="text-[15px] font-extrabold tracking-[-0.04em]">SF</span>
-            </div>
-            <div className="flex flex-col min-w-0 px-1">
-              <span className={`text-[18px] font-extrabold leading-none tracking-[-0.04em] truncate font-['Plus_Jakarta_Sans'] ${theme === 'dark' ? 'text-white' : 'text-[#0f172a]'}`}>
-                Schema Forge
-              </span>
-              <span className="mt-1.5 text-[10px] uppercase tracking-[0.18em] font-extrabold text-[#94a3b8] truncate opacity-90">
-                DATABASE ARCHITECT
-              </span>
-            </div>
-          </Link>
+    <motion.nav
+      initial={{ y: -20, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      className={
+        fullWidth
+          ? "fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 py-5 bg-nebula-950/80 backdrop-blur-xl border-b border-white/5"
+          : "fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-5 glass-panel border-b-0 m-4 rounded-2xl bg-nebula-950/40 backdrop-blur-xl"
+      }
+    >
+      {/* ── LOGO Area ─────────────────────────────────── */}
+      <Link to="/" className="flex items-center gap-2.5 group cursor-pointer mr-6">
+        <div className="w-9 h-9 bg-[color:var(--color-accent-primary)] rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:scale-105 group-hover:rotate-3 transition-transform">
+          <Database className="text-white w-5 h-5" />
         </div>
+        <div className="flex flex-col">
+          <span className="font-display font-bold text-xl tracking-tighter text-white leading-none">SchemaForge</span>
+          <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500 mt-1">Database Architect</span>
+        </div>
+      </Link>
 
-        {/* Action Area */}
-        <div className={`flex items-center justify-end gap-5 ${fullWidth ? 'flex-1 px-5' : 'flex-1'} `}>
-          <button
-            onClick={onToggle}
-            className={`group relative flex h-10 w-10 items-center justify-center rounded-xl border transition-all duration-300 ${
-              theme === 'dark'
-                ? "border-[#334155] bg-[#0f172a] text-indigo-300 hover:border-indigo-400 hover:bg-[#1e293b]"
-                : "border-[#e2e8f0] bg-white text-amber-500 hover:border-indigo-200 hover:bg-slate-50"
-            }`}
-            aria-label="Toggle theme"
-          >
-            {theme === "light" ? (
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.364 17.636l-.707.707M17.636 17.636l.707.707M6.364 6.364l.707.707M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            ) : (
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-            )}
-          </button>
-          
-          <SignedOut>
-            <SignInButton mode="modal">
-              <Button variant="ghost" className="hidden sm:inline-flex h-10 rounded-xl px-4 text-[10px] uppercase font-black tracking-widest text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-all">
-                Login
-              </Button>
-            </SignInButton>
-            <SignInButton mode="modal" fallbackRedirectUrl="/dashboard">
-              <Button variant="primary" className="hidden sm:inline-flex h-10 rounded-xl px-7 shadow-xl shadow-indigo-500/20 bg-indigo-500 hover:bg-indigo-600 border-none font-black text-[10px] uppercase tracking-widest transition-transform hover:scale-105 active:scale-95">
-                Get Started
-              </Button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
-            <UserButton afterSignOutUrl="/" />
-          </SignedIn>
+      {/* ── Navigation Links Area ─────────────────────── */}
+      {!fullWidth && (
+        <div className="hidden md:flex items-center gap-8 text-[11px] font-bold tracking-[0.15em] text-slate-400">
+          <a href="/#features" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Features</a>
+          <a href="/#templates" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Templates</a>
+          <Link to="/docs" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Docs</Link>
         </div>
+      )}
+
+      {/* ── Actions Area ──────────────────────────────── */}
+      <div className="flex items-center gap-6">
+        {/* Theme Toggle */}
+        <button
+          onClick={onToggle}
+          className="p-2 rounded-xl text-slate-500 hover:text-white hover:bg-white/5 transition-all"
+          aria-label="Toggle theme"
+        >
+          {theme === "light" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
+
+        <SignedOut>
+          <SignInButton mode="modal">
+            <button className="hidden sm:block text-[11px] font-bold tracking-[0.1em] text-slate-400 hover:text-white transition-all px-2 py-2">
+              Log in
+            </button>
+          </SignInButton>
+          <SignInButton mode="modal" fallbackRedirectUrl="/dashboard">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.98 }}
+              className="py-4 px-6 bg-white text-nebula-950 rounded-lg text-[11px] font-black tracking-[0.05em] hover:bg-slate-100 transition-all flex items-center justify-center shadow-lg shadow-white/5"
+            >
+              Get Started
+            </motion.button>
+          </SignInButton>
+        </SignedOut>
+
+        <SignedIn>
+          <UserButton
+            appearance={{
+              elements: {
+                userButtonAvatarBox: "w-9 h-9 rounded-xl border border-white/10",
+              },
+            }}
+            afterSignOutUrl="/"
+          />
+        </SignedIn>
       </div>
-    </nav>
+    </motion.nav>
   );
 }

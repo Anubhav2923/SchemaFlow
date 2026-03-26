@@ -15,6 +15,7 @@ import groupRoutes from "./modules/groups/groups.routes";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
+  const isDevelopment = process.env.NODE_ENV !== "production";
 
   await app.register(cors, {
     origin: true,
@@ -23,8 +24,8 @@ export async function buildApp() {
   });
 
   await app.register(fastifyRateLimit, {
-    max: 100, // 100 requests per minute per IP
-    timeWindow: '1 minute'
+    max: isDevelopment ? 5000 : 300,
+    timeWindow: "1 minute",
   });
 
   await app.register(clerkPlugin);

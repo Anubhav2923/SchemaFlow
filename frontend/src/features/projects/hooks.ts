@@ -14,6 +14,10 @@ export function useProjects(userId?: string | null) {
     queryKey: ["projects", userId ?? "guest"],
     queryFn: fetchProjects,
     enabled: Boolean(userId),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 0,
   });
 }
 
