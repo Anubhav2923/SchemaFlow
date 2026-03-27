@@ -283,7 +283,7 @@ function formatFilename(projectName: string, extension: string) {
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "schemaforge-export";
+      .replace(/^-+|-+$/g, "") || "schemaflow-export";
 
   return `${base}.${extension}`;
 }

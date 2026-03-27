@@ -46,11 +46,11 @@ const ORM_SUPPORTS = ["Prisma", "Drizzle", "Mongoose", "PostgreSQL", "MySQL"];
 /* ─── Main Component ─────────────────────────────────── */
 export function GuestDashboard({ handleSubmit, name, setName, description, setDescription, isPending }: GuestDashboardProps) {
   return (
-    <div className="flex-1 w-full min-h-screen bg-nebula-950 text-slate-200 overflow-x-hidden selection:bg-[color:var(--color-accent-primary)]/30">
+    <div className="flex-1 w-full min-h-screen bg-[var(--page-bg)] text-[var(--ink-strong)] overflow-x-hidden selection:bg-[color:var(--color-accent-primary)]/30 transition-colors duration-300">
 
       {/* ══ HERO ══════════════════════════════════════════════ */}
-      <section className="relative pt-32 pb-20 px-4 md:px-6 xl:px-10 overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[600px] nebula-glow -z-10" />
+      <section className="relative pt-40 pb-20 px-4 md:px-6 xl:px-10 overflow-hidden">
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-full h-[600px] nebula-glow-top -z-10" />
         <div className="max-w-[1580px] mx-auto text-center mt-30">
           <motion.div
             initial="hidden"
@@ -62,7 +62,7 @@ export function GuestDashboard({ handleSubmit, name, setName, description, setDe
           >
             <motion.h1
               variants={{ hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } }}
-              className="text-[4em] md:text-[8rem] xl:text-[8rem] font-bold mb-10 leading-[1] tracking-[-0.08em] text-white font-display"
+              className="text-[4em] md:text-[8rem] xl:text-[8rem] font-bold mb-10 leading-[1] tracking-[-0.08em] dark:text-white text-slate-900 font-display"
               style={{ textRendering: "geometricPrecision", WebkitFontSmoothing: "antialiased" }}
             >
               The Figma for <br />
@@ -73,7 +73,7 @@ export function GuestDashboard({ handleSubmit, name, setName, description, setDe
 
             <motion.p
               variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-              className="text-lg md:text-xl text-slate-400 mb-16 max-w-4xl mx-auto leading-relaxed font-medium"
+              className="text-lg md:text-xl dark:text-slate-300 text-slate-700 mb-16 max-w-4xl mx-auto leading-relaxed font-medium"
               style={{ textRendering: "optimizeLegibility", WebkitFontSmoothing: "antialiased" }}
             >
               Bridge the gap between abstract data modeling and production-ready implementation. 
@@ -110,14 +110,14 @@ export function GuestDashboard({ handleSubmit, name, setName, description, setDe
             transition={{ delay: 0.6, duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
             className="mt-24 relative group"
           >
-            <div className="glass-panel rounded-[1.75rem] p-4 border-white/5 shadow-[0_0_120px_rgba(0,0,0,0.6)] overflow-hidden relative z-10 mx-auto max-w-[1440px]">
+            <div className="glass-panel rounded-[1.75rem] p-4 shadow-[0_0_120px_rgba(0,0,0,0.2)] dark:shadow-[0_0_120px_rgba(0,0,0,0.6)] overflow-hidden relative z-10 mx-auto max-w-[1440px]">
               <div className="bg-nebula-900 rounded-[1.35rem] aspect-[18/9.7] relative overflow-hidden group/canvas">
                 
                 {/* Dashboard Screenshot Mockup */}
                 <div className="absolute inset-0">
                   <img 
                     src="/dahboard_image.png" 
-                    alt="SchemaForge Workspace Preview" 
+                    alt="SchemaFlow Workspace Preview" 
                     className="w-full h-full object-cover opacity-90 group-hover/canvas:opacity-100 group-hover/canvas:scale-[1.01] transition-all duration-700"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-nebula-950 via-transparent to-transparent opacity-40" />
@@ -163,9 +163,9 @@ export function GuestDashboard({ handleSubmit, name, setName, description, setDe
             transition={{ duration: 0.8 }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-6xl font-bold mb-4 tracking-tighter font-display">Engineered for Modern Teams</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto text-lg leading-relaxed font-light">
-              SchemaForge provides a premium workspace focused on clarity, speed, and collaborative intent.
+            <h2 className="text-4xl md:text-6xl font-bold mb-4 tracking-tighter font-display dark:text-white text-slate-900">Engineered for Modern Teams</h2>
+            <p className="dark:text-slate-300 text-slate-700 max-w-2xl mx-auto text-lg leading-relaxed font-light">
+              SchemaFlow provides a premium workspace focused on clarity, speed, and collaborative intent.
             </p>
           </motion.div>
 
@@ -187,7 +187,7 @@ export function GuestDashboard({ handleSubmit, name, setName, description, setDe
                       {f.icon}
                     </div>
                     <h3 className="text-2xl font-bold mb-4 font-display text-white">{f.title}</h3>
-                    <p className="text-slate-400 text-sm leading-relaxed font-light">{f.description}</p>
+                    <p className="text-sm dark:text-slate-300 text-slate-700 leading-relaxed font-light">{f.description}</p>
                   </div>
                 }
               />
@@ -208,7 +208,7 @@ export function GuestDashboard({ handleSubmit, name, setName, description, setDe
           >
             <h2 className="text-4xl md:text-5xl font-bold mb-6 font-display text-white">From Visual to <br />Production Code</h2>
             <p className="text-slate-400 text-lg mb-8 leading-relaxed font-light">
-              Stop manually writing boilerplate. SchemaForge generates type-safe code for your favorite ORMs and raw SQL dialects instantly.
+              Stop manually writing boilerplate. SchemaFlow generates type-safe code for your favorite ORMs and raw SQL dialects instantly.
             </p>
             <ul className="space-y-4">
               {ORM_SUPPORTS.map((item, i) => (
@@ -328,7 +328,7 @@ model Post {
               <div className="w-12 h-12 bg-gradient-to-br from-accent-primary to-accent-cyan rounded-2xl flex items-center justify-center shadow-lg shadow-accent-primary/20">
                 <Database className="text-white w-6 h-6" />
               </div>
-              <span className="font-display font-bold text-3xl text-white tracking-tight">SchemaForge</span>
+              <span className="font-display font-bold text-3xl text-white tracking-tight">SchemaFlow</span>
             </div>
             <p className="text-slate-500 text-lg leading-relaxed font-light">
               Architecting the future of data systems. Built for performance, security, and developer joy.
@@ -371,7 +371,7 @@ model Post {
         </div>
 
         <div className="max-w-[1400px] mx-auto mt-24 pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6 text-[11px] text-slate-600 font-black uppercase tracking-[0.4em]">
-          <div>&copy; {new Date().getFullYear()} SchemaForge Engineering. All rights reserved.</div>
+          <div>&copy; {new Date().getFullYear()} SchemaFlow Engineering. All rights reserved.</div>
           <div className="flex items-center gap-2">
             Status: <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" /> All Systems Online
           </div>

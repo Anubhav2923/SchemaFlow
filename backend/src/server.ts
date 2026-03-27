@@ -11,7 +11,7 @@ async function start() {
       host: '0.0.0.0',
     });
 
-    console.log(`\n🚀 SchemaForge API running on port ${env.PORT}`);
+    console.log(`\n🚀 SchemaFlow API running on port ${env.PORT}`);
     console.log(`📡 Health: http://localhost:${env.PORT}/api/health`);
     console.log(`🛢️  DB Test: http://localhost:${env.PORT}/api/db-test\n`);
   } catch (err) {

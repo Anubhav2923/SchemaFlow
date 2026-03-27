@@ -4,6 +4,8 @@ import { Button } from "../../../components/ui/Button";
 import { AuthenticatedProjectCard } from "./ProjectCard";
 import { SidebarItem } from "./SidebarItem";
 import { NewDiagramModal, type DiagramDatabaseType } from "../../../components/modals/NewDiagramModal";
+import { TiltedCard } from "../../../components/ui/TiltedCard";
+import { Database, ShieldCheck, ShoppingCart, Zap, Share2, ArrowRight } from "lucide-react";
 import type { Project } from "../../../features/projects/api";
 import type { ViewType } from "../utils";
 
@@ -70,7 +72,7 @@ export function AuthenticatedDashboard({
               <svg className="h-12 w-12 text-indigo-500/40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeWidth="1.5" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
             </div>
             <h3 className="text-2xl font-black text-[var(--ink-strong)] tracking-tight italic">Visual Universe Empty</h3>
-            <p className="mt-2 text-sm font-bold text-[var(--ink-muted)] max-w-sm mx-auto opacity-70">Your architecture library is waiting for its first star.</p>
+            <p className="mt-2 text-sm font-bold text-slate-500 max-w-sm mx-auto">Your architecture library is waiting for its first star.</p>
             <Button onClick={() => setIsModalOpen(true)} variant="ghost" className="mt-8 text-[11px] font-black uppercase tracking-[0.25em] text-indigo-500 hover:text-indigo-600 dark:hover:text-white">
               Initialize Diagram {"->"}
             </Button>
@@ -171,21 +173,82 @@ export function AuthenticatedDashboard({
         );
 
       case "templates":
+        const DASHBOARD_TEMPLATES = [
+          {
+            id: "auth",
+            name: "User Auth Flow",
+            desc: "Complete IAM schema with sessions, MFA, and RBAC.",
+            icon: <ShieldCheck className="w-6 h-6 text-indigo-400" />,
+            color: "from-indigo-500/20 to-blue-500/5",
+          },
+          {
+            id: "ecommerce",
+            name: "E-commerce Engine",
+            desc: "Inventory, orders, and payment tracking systems.",
+            icon: <ShoppingCart className="w-6 h-6 text-emerald-400" />,
+            color: "from-emerald-500/20 to-teal-500/5",
+          },
+          {
+            id: "saas",
+            name: "Billing & SaaS",
+            desc: "Subscriptions, plans, and usage-based billing logic.",
+            icon: <Zap className="w-6 h-6 text-amber-400" />,
+            color: "from-amber-500/20 to-orange-500/5",
+          },
+          {
+            id: "social",
+            name: "Social Graph",
+            desc: "Complex relationships, feeds, and activity streams.",
+            icon: <Share2 className="w-6 h-6 text-rose-400" />,
+            color: "from-rose-500/20 to-pink-500/5",
+          },
+          {
+            id: "fintech",
+            name: "FinTech Core",
+            desc: "Ledger-based transactions and audit trails.",
+            icon: <Database className="w-6 h-6 text-cyan-400" />,
+            color: "from-cyan-500/20 to-indigo-500/5",
+          }
+        ];
+
         return (
-          <div className="animate-fade-in">
-            <div className="mb-8">
-              <h3 className="text-xl font-black text-[var(--ink-strong)] tracking-tight">Standard Schemas</h3>
-              <p className="text-sm text-[var(--ink-muted)] font-medium">Kickstart your architecture with battle-tested templates.</p>
+          <div className="animate-fade-in pb-20">
+            <div className="mb-12">
+              <h3 className="text-2xl font-black text-[var(--ink-strong)] tracking-tight font-display italic">Standard Schemas</h3>
+              <p className="text-sm text-slate-500 font-bold">Battle-tested architectures for rapid engineering.</p>
             </div>
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {["User Auth Flow", "E-commerce Engine", "Billing & SaaS", "Social Graph", "FinTech Core"].map(name => (
-                <div key={name} className="p-6 rounded-2xl bg-[var(--panel-soft)] border border-[var(--line-soft)] hover:border-indigo-500/30 hover:bg-white dark:hover:bg-[#111827] transition group cursor-pointer">
-                  <div className="h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <svg className="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                  </div>
-                  <h4 className="text-sm font-black text-[var(--ink-strong)]">{name}</h4>
-                  <p className="mt-1 text-[11px] text-[var(--ink-muted)] font-bold">Standard Library</p>
-                  <button className="mt-4 text-[10px] font-black uppercase tracking-widest text-indigo-500 opacity-0 group-hover:opacity-100 transition-all">Use Template {"->"}</button>
+            <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {DASHBOARD_TEMPLATES.map((tpl, i) => (
+                <div key={tpl.id} className="relative group p-0.5">
+                   <TiltedCard
+                    containerHeight="280px"
+                    imageHeight="280px"
+                    rotateAmplitude={12}
+                    scaleOnHover={1.05}
+                    showTooltip={false}
+                    displayOverlayContent={true}
+                    overlayContent={
+                      <div className="p-8 h-full flex flex-col glass-panel rounded-3xl border-white/5 group-hover:border-white/10 transition-all relative overflow-hidden backdrop-blur-sm">
+                        <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${tpl.color} blur-[60px] -z-10 transition-all duration-500 group-hover:scale-125`} />
+                        
+                        <div className="mb-6 p-4 rounded-xl bg-white/5 w-fit border border-white/5 group-hover:bg-white/10 transition-all duration-500">
+                          {tpl.icon}
+                        </div>
+                        
+                        <h4 className="text-lg font-black mb-2 text-[var(--ink-strong)] tracking-tight transition-colors">{tpl.name}</h4>
+                        <p className="text-[11px] text-slate-400 leading-relaxed font-bold group-hover:text-slate-200 transition-colors">
+                          {tpl.desc}
+                        </p>
+
+                        <div className="mt-auto flex items-center justify-between">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 p-1.5 px-2.5 rounded-lg bg-white/5 border border-white/5">Standard Lib</span>
+                          <button className="flex items-center gap-1.5 text-indigo-400 text-[10px] font-black uppercase tracking-widest hover:text-indigo-300 transition-all">
+                            Use <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  />
                 </div>
               ))}
             </div>

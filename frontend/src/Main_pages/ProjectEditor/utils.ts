@@ -4,8 +4,8 @@ import type { ImportableSchema, ImportableSchemaMetadata, PreviewSchemaData, Tem
 import { autoLayoutPositions } from "../../features/schema/utils";
 
 // ─── Local storage helpers ────────────────────────────────────────────────────
-const keyFor = (k: string) => `schemaforge-layout:${k}`;
-const templateKeyFor = (templateId: string) => `schemaforge-template-layout:${templateId}`;
+const keyFor = (k: string) => `schemaflow-layout:${k}`;
+const templateKeyFor = (templateId: string) => `schemaflow-template-layout:${templateId}`;
 
 export function loadPositions(k: string): NodePositionMap {
   try { return JSON.parse(window.localStorage.getItem(keyFor(k)) ?? "{}") as NodePositionMap; } catch { return {}; }

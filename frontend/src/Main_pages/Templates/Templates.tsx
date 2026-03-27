@@ -128,7 +128,7 @@ export default function Templates() {
                       </div>
                       
                       <h3 className="text-3xl font-bold mb-4 font-display text-white tracking-tight">{tpl.title}</h3>
-                      <p className="text-slate-400 text-base leading-relaxed mb-10 font-medium opacity-80 group-hover:opacity-100 transition-opacity">
+                      <p className="text-slate-400 text-base leading-relaxed mb-10 font-medium group-hover:text-slate-200 transition-colors">
                         {tpl.description}
                       </p>
 
@@ -186,7 +186,7 @@ export default function Templates() {
              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
                 <Database className="text-white w-5 h-5" />
               </div>
-              <span className="font-display font-bold text-2xl text-white tracking-tight">SchemaForge</span>
+              <span className="font-display font-bold text-2xl text-white tracking-tight">SchemaFlow</span>
           </div>
           <div className="flex gap-10 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
             <Link to="/" className="hover:text-white transition-colors">Home</Link>
@@ -195,7 +195,7 @@ export default function Templates() {
             <a href="#" className="hover:text-white transition-colors">Privacy</a>
           </div>
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700">
-            &copy; {new Date().getFullYear()} SchemaForge Engineering
+            &copy; {new Date().getFullYear()} SchemaFlow Engineering
           </p>
         </div>
       </footer>

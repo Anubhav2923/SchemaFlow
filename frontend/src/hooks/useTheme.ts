@@ -5,7 +5,7 @@ type Theme = "light" | "dark";
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
-      return (window.localStorage.getItem("schemaforge-theme") as Theme) || "light";
+      return (window.localStorage.getItem("schemaflow-theme") as Theme) || "light";
     }
     return "light";
   });
@@ -18,7 +18,7 @@ export function useTheme() {
     } else {
        root.classList.remove("dark");
     }
-    window.localStorage.setItem("schemaforge-theme", theme);
+    window.localStorage.setItem("schemaflow-theme", theme);
   }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));

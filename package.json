@@ -1,7 +1,7 @@
 {
-  "name": "schema_forge_project",
+  "name": "schemaflow_project",
   "version": "1.0.0",
-  "description": "\"# SchemaForge\" \r \"# Checking for the git status \"",
+  "description": "\"# SchemaFlow\" \r \"# Checking for the git status \"",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -11,13 +11,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Anubhav2923/SchemaForge.git"
+    "url": "git+https://github.com/Anubhav2923/SchemaFlow.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Anubhav2923/SchemaForge/issues"
+    "url": "https://github.com/Anubhav2923/SchemaFlow/issues"
   },
-  "homepage": "https://github.com/Anubhav2923/SchemaForge#readme"
+  "homepage": "https://github.com/Anubhav2923/SchemaFlow#readme"
 }

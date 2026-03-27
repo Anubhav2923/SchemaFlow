@@ -30,7 +30,7 @@ async function dbConnector(fastify: FastifyInstance) {
     throw new Error("DATABASE_URL is not set in environment variables.");
   }
 
-  const dbName = connectionString.split("/").pop()?.split("?")[0] || "schemaforge";
+  const dbName = connectionString.split("/").pop()?.split("?")[0] || "schemaflow";
 
   try {
     const pool = new Pool({ connectionString });

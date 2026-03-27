@@ -96,11 +96,13 @@ export function TiltedCard({
   return (
     <figure
       ref={ref}
-      className={`relative w-full h-full [perspective:800px] flex flex-col items-center justify-center ${className}`}
+      className={`relative w-full h-full flex flex-col items-center justify-center ${className}`}
       style={{
         height: containerHeight,
-        width: containerWidth
-      }}
+        width: containerWidth,
+        perspective: "800px",
+        WebkitFontSmoothing: "antialiased",
+      } as React.CSSProperties}
       onMouseMove={handleMouse}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -114,13 +116,15 @@ export function TiltedCard({
       )}
 
       <motion.div
-        className="relative [transform-style:preserve-3d] w-full h-full"
+        className="relative w-full h-full"
         style={{
           width: imageWidth,
           height: imageHeight,
           rotateX,
           rotateY,
-          scale
+          scale,
+          transformStyle: "preserve-3d",
+          willChange: "transform",
         }}
       >
         {imageSrc && (
@@ -136,7 +140,13 @@ export function TiltedCard({
         )}
 
         {displayOverlayContent && (
-          <motion.div className="absolute inset-0 z-[2] will-change-transform [transform:translateZ(40px)] flex flex-col">
+          <motion.div
+            className="absolute inset-0 z-[2] will-change-transform flex flex-col"
+            style={{
+              transform: "translateZ(1px)",
+              WebkitFontSmoothing: "antialiased",
+            } as React.CSSProperties}
+          >
             {overlayContent || children}
           </motion.div>
         )}

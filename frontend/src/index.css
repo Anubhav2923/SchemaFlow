@@ -96,11 +96,59 @@ body {
   letter-spacing: -0.018em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  text-rendering: geometricPrecision;
   scroll-behavior: smooth;
-  image-rendering: -webkit-optimize-contrast;
   transition: background-color 300ms cubic-bezier(0.4, 0, 0.2, 1), color 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ── GLOBAL CRISP TEXT FIX ─────────────────────────────
+   Prevents blurry/fuzzy text caused by:
+   - CSS 3D transforms (translateZ, perspective)
+   - backdrop-blur on parent elements  
+   - GPU compositing on transformed layers
+────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+/* Force crisp text on any GPU-composited/transformed element */
+[class*="translate"],
+[class*="rotate"],
+[class*="scale"],
+[class*="transform"],
+[class*="backdrop"],
+[class*="blur"] {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent 3D transform sub-pixel blurring on text containers */
+.glass-panel,
+.glass-panel * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+/* Fix TiltedCard 3D overlay blurriness: neutralize translateZ on text */
+[class*="translateZ"] {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+  /* Snap text to pixel grid to prevent sub-pixel blurring */
+  transform: translateZ(0) !important;
+}
+
+/* Specifically target motion.div overlay containers */
+.tilted-card-overlay,
+.tilted-card-overlay * {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  transform-style: flat !important;
+}
+
 
 /* React Flow Performance & Crispness Fixes */
 .react-flow__node {
@@ -209,15 +257,34 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* SchemaForge Landing Classes */
+/* SchemaFlow Landing Classes */
 .nebula-glow {
   background: radial-gradient(circle at center, var(--color-accent-primary) 0%, transparent 70%);
   filter: blur(60px);
   opacity: 0.15;
 }
 
+.nebula-glow-top {
+  background: radial-gradient(circle at top, var(--color-accent-primary) 0%, transparent 70%);
+  filter: blur(80px);
+  opacity: 0.1;
+}
+
 .glass-panel {
-  @apply bg-white/5 backdrop-blur-md border border-white/10;
+  @apply backdrop-blur-md border;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+:root:not(.dark) .glass-panel {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
 }
 
 .grid-pattern {

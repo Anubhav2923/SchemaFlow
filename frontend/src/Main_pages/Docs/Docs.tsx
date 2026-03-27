@@ -97,7 +97,7 @@ export function Documentation() {
               </span>
             </h1>
             <p className="text-xl md:text-2xl text-slate-400 leading-relaxed font-light max-w-4xl mb-12">
-              SchemaForge is the most advanced database design workspace ever built. We combine visual intuition with
+              SchemaFlow is the most advanced database design workspace ever built. We combine visual intuition with
               automation to give your engineering team a single source of truth for your data structures.
             </p>
 
@@ -165,7 +165,7 @@ export function Documentation() {
             <div className="space-y-12">
               <div className="p-10 glass-panel rounded-[2.5rem] border-white/5">
                 <h3 className="text-3xl font-bold text-white mb-6 font-display">01. Modeling Entity Discovery</h3>
-                <p className="text-lg text-slate-400 leading-relaxed mb-10 max-w-3xl">Start by mapping out your core entities. In SchemaForge, every table is a "Node". Focus on naming conventions and basic data types before establishing links.</p>
+                <p className="text-lg text-slate-400 leading-relaxed mb-10 max-w-3xl">Start by mapping out your core entities. In SchemaFlow, every table is a "Node". Focus on naming conventions and basic data types before establishing links.</p>
                 <div className="flex gap-3">
                   <div className="h-2 w-24 bg-accent-primary rounded-full shadow-[0_0_15px_rgba(99,102,241,0.6)]" />
                   <div className="h-2 w-24 bg-white/5 rounded-full" />
@@ -281,7 +281,7 @@ export function Documentation() {
         return (
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
             <h2 className="text-5xl font-bold text-white mb-8 font-display">Constraints & Data Types</h2>
-            <p className="text-xl text-slate-400 mb-12">SchemaForge supports every native type for SQL and NoSQL engines.</p>
+            <p className="text-xl text-slate-400 mb-12">SchemaFlow supports every native type for SQL and NoSQL engines.</p>
             <div className="space-y-4">
               {["UUID & ULID", "JSONB / JSON", "Enums & Custom Domains", "Composite Primary Keys"].map((type, i) => (
                 <div key={i} className="flex items-center justify-between p-6 bg-white/5 rounded-2xl border border-white/5 hover:border-accent-cyan/30 transition-all group">

@@ -8,54 +8,88 @@ type Theme = "light" | "dark";
 interface NavbarProps {
   theme: Theme;
   onToggle: () => void;
-  fullWidth?: boolean;
 }
 
-export function Navbar({ theme, onToggle, fullWidth = false }: NavbarProps) {
+export function Navbar({ theme, onToggle }: NavbarProps) {
+  const isDark = theme === "dark";
+
+  const navBg = isDark
+    ? "rgba(5, 5, 20, 0.75)"
+    : "rgba(255, 255, 255, 0.88)";
+
+  const textColor = isDark ? "#ffffff" : "#0f172a";
+  const subTextColor = isDark ? "#94a3b8" : "#64748b";
+  const shadowColor = isDark
+    ? "0 8px 32px rgba(0,0,0,0.5)"
+    : "0 8px 32px rgba(0,0,0,0.10)";
+  const ringColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.07)";
+  const logoGlow = isDark
+    ? "0 0 30px rgba(99,102,241,0.7)"
+    : "0 0 20px rgba(99,102,241,0.45)";
+
   return (
     <motion.nav
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className={
-        fullWidth
-          ? "fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 py-5 bg-nebula-950/80 backdrop-blur-xl border-b border-white/5"
-          : "fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-5 glass-panel border-b-0 m-4 rounded-2xl bg-nebula-950/40 backdrop-blur-xl"
-      }
+      style={{
+        background: navBg,
+        boxShadow: shadowColor,
+        outline: `1px solid ${ringColor}`,
+      }}
+      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-5 m-4 rounded-2xl backdrop-blur-xl transition-all duration-300"
     >
       {/* ── LOGO Area ─────────────────────────────────── */}
       <Link to="/" className="flex items-center gap-2.5 group cursor-pointer mr-6">
-        <div className="w-9 h-9 bg-[color:var(--color-accent-primary)] rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:scale-105 group-hover:rotate-3 transition-transform">
-          <Database className="text-white w-5 h-5" />
+        <div
+          className="w-9 h-9 bg-[color:var(--color-accent-primary)] rounded-xl flex items-center justify-center group-hover:scale-110 group-hover:rotate-6 transition-all duration-500"
+          style={{ boxShadow: logoGlow }}
+        >
+          <Database className="text-white w-5 h-5 drop-shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
         </div>
         <div className="flex flex-col">
-          <span className="font-display font-bold text-xl tracking-tighter text-white leading-none">SchemaForge</span>
-          <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500 mt-1">Database Architect</span>
+          <span
+            className="font-display font-bold text-xl tracking-tighter leading-none transition-colors duration-300"
+            style={{ color: textColor }}
+          >
+            SchemaFlow
+          </span>
+          <span
+            className="text-[8px] font-black uppercase tracking-[0.2em] mt-1 transition-colors duration-300"
+            style={{ color: subTextColor }}
+          >
+            Database Architect
+          </span>
         </div>
       </Link>
 
       {/* ── Navigation Links Area ─────────────────────── */}
-      {!fullWidth && (
-        <div className="hidden md:flex items-center gap-8 text-[11px] font-bold tracking-[0.15em] text-slate-400">
-          <Link to="/" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Home</Link>
-          <Link to="/templates" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Templates</Link>
-          <Link to="/docs" className="hover:!text-white hover:scale-105 transition-all duration-300 lg:text-lg">Docs</Link>
-        </div>
-      )}
+      <div
+        className="hidden md:flex items-center gap-8 text-[11px] font-bold tracking-[0.15em] transition-colors duration-300"
+        style={{ color: textColor }}
+      >
+        <Link to="/" className="hover:!text-indigo-500 hover:scale-105 transition-all duration-300 lg:text-lg transition-colors">Home</Link>
+        <Link to="/templates" className="hover:!text-indigo-500 hover:scale-105 transition-all duration-300 lg:text-lg transition-colors">Templates</Link>
+        <Link to="/docs" className="hover:!text-indigo-500 hover:scale-105 transition-all duration-300 lg:text-lg transition-colors">Docs</Link>
+      </div>
 
       {/* ── Actions Area ──────────────────────────────── */}
       <div className="flex items-center gap-6">
         {/* Theme Toggle */}
         <button
           onClick={onToggle}
-          className="p-2 rounded-xl text-slate-500 hover:text-white hover:bg-white/5 transition-all"
+          className="p-2 rounded-xl transition-all hover:bg-black/5"
           aria-label="Toggle theme"
+          style={{ color: subTextColor }}
         >
-          {theme === "light" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
         <SignedOut>
           <SignInButton mode="modal">
-            <button className="hidden sm:block text-[11px] font-bold tracking-[0.1em] text-slate-400 hover:text-white transition-all px-2 py-2">
+            <button
+              className="hidden sm:block text-[11px] font-bold tracking-[0.1em] transition-all px-2 py-2 hover:text-indigo-500"
+              style={{ color: subTextColor }}
+            >
               Log in
             </button>
           </SignInButton>
@@ -63,7 +97,7 @@ export function Navbar({ theme, onToggle, fullWidth = false }: NavbarProps) {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.98 }}
-              className="py-4 px-6 bg-white text-nebula-950 rounded-lg text-[11px] font-black tracking-[0.05em] hover:bg-slate-100 transition-all flex items-center justify-center shadow-lg shadow-white/5"
+              className="py-2.5 px-5 bg-indigo-600 text-white rounded-lg text-[11px] font-black tracking-[0.05em] hover:bg-indigo-500 transition-all flex items-center justify-center shadow-lg shadow-indigo-500/30"
             >
               Get Started
             </motion.button>
