@@ -50,7 +50,10 @@ function TableNodeComponent({ data, selected }: NodeProps<TableNodeData>) {
         </div>
       )}
       {/* Header - Technical Theme */}
-      <div className={`px-4 py-3 border-b flex justify-between items-center ${isDark ? "border-slate-800 bg-slate-900/55" : "border-slate-200 bg-slate-50"}`}>
+      <div
+        className={`px-4 py-3 border-b flex justify-between items-center ${isDark ? "border-slate-800 bg-slate-900/55" : "border-slate-200 bg-slate-50"}`}
+        style={{ textRendering: "geometricPrecision" }}
+      >
         <h3 className={`text-[15px] font-semibold tracking-[0.01em] leading-none ${isDark ? "text-slate-100" : "text-slate-900"}`}>
           {data.name}
         </h3>

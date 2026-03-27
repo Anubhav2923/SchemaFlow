@@ -150,18 +150,32 @@ body {
 }
 
 
-/* React Flow Performance & Crispness Fixes */
+/* ── REACTFLOW CANVAS CRISP TEXT FIX ───────────────────────
+   ReactFlow sometimes adds hardware acceleration properties to nodes.
+   Using "will-change: transform" or "backface-visibility" forces the browser
+   to create a static GPU layer. At 1x zoom this is fine, but when zooming in,
+   the browser stretches that 1x bitmap layer, making text incredibly blurry.
+   
+   Fix: DO NOT use hardware-acceleration on nodes. Keep them in the normal flow
+   so text re-renders crisply as you zoom.
+────────────────────────────────────────────────────────────── */
 .react-flow__node {
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform-style: preserve-3d;
-  -webkit-transform-style: preserve-3d;
+  /* Crisp text rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
+/* Every text element inside a node: force crisp rendering */
 .react-flow__node * {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ReactFlow viewport transform — force integer pixel boundary */
+.react-flow__viewport {
+  -webkit-font-smoothing: antialiased;
 }
 
 .react-flow__edge-path {
@@ -205,7 +219,7 @@ textarea {
 }
 
 .react-flow__node {
-  will-change: transform;
+  /* OVERRIDDEN - Do not use will-change: transform to avoid rasterization blur on zoom */
 }
 
 .react-flow__edge-path,
