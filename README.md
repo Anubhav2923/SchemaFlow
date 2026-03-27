@@ -17,10 +17,6 @@ SchemaFlow is a modern, high-performance database schema designer that bridges t
 *   **Smart Handles**: Connect foreign keys with a simple drag motion.
 *   **Automatic Layout**: Professional auto-arrangement to keep your diagrams clean.
 
-### 🤖 AI Engineering (Nebula AI)
-*   **Instant Generation**: Describe your project requirements and let AI build the schema.
-*   **Architectural Optimization**: AI-driven suggestions for data types and indexing.
-*   **Schema Analysis**: Performance audits for your current designs.
 
 ### 🌑 Nebula UI Experience
 *   **Pixel-Perfect Rendering**: High-performance, crisp text at every zoom level.
