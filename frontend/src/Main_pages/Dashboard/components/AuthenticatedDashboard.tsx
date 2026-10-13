@@ -218,7 +218,7 @@ export function AuthenticatedDashboard({
               <p className="text-sm text-slate-500 font-bold">Battle-tested architectures for rapid engineering.</p>
             </div>
             <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {DASHBOARD_TEMPLATES.map((tpl, i) => (
+              {DASHBOARD_TEMPLATES.map((tpl) => (
                 <div key={tpl.id} className="relative group p-0.5">
                    <TiltedCard
                     containerHeight="280px"
