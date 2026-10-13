@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon",
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync(path.join('dist','db'),{recursive:true});fs.copyFileSync(path.join('src','db','init.sql'),path.join('dist','db','init.sql'));console.log('copied init.sql -> dist/db');\"",
     "start": "node dist/server.js",
     "db:clear": "ts-node scripts/clear-db.ts"
   },
