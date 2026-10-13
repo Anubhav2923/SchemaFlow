@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix backend && npm run build --prefix backend && npm run copy-client",
+    "copy-client": "node -e \"const fs=require('fs');const path=require('path');const src=path.join('frontend','dist');const dest=path.join('backend','dist','public');fs.rmSync(dest,{recursive:true,force:true});fs.mkdirSync(dest,{recursive:true});fs.cpSync(src,dest,{recursive:true});console.log('Copied '+src+' -> '+dest);\"",
+    "start": "npm run start --prefix backend",
     "dev-backend": "npm run dev --prefix backend",
     "dev-frontend": "npm run dev --prefix frontend",
     "dev": "concurrently \"npm run dev-backend\" \"npm run dev-frontend\""
@@ -19,5 +22,11 @@
   "bugs": {
     "url": "https://github.com/Anubhav2923/SchemaFlow/issues"
   },
-  "homepage": "https://github.com/Anubhav2923/SchemaFlow#readme"
+  "homepage": "https://github.com/Anubhav2923/SchemaFlow#readme",
+  "dependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
